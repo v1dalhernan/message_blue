@@ -53,7 +53,10 @@ void main() {
     expect(find.text('Solicitud recibida'), findsOneWidget);
     expect(find.text('7391'), findsOneWidget);
 
-    await tester.tap(find.text('Aceptar'));
+    final acceptButton = find.text('Aceptar');
+    await tester.ensureVisible(acceptButton);
+    await tester.pumpAndSettle();
+    await tester.tap(acceptButton);
     await tester.pump();
     expect(transport.acceptedEndpoints, ['peer-1']);
 
@@ -66,7 +69,10 @@ void main() {
     transport.add(const SecureChannelReady('peer-1'));
     await tester.pump();
 
-    expect(find.text('Abrir chat'), findsOneWidget);
+    final openChatButton = find.text('Abrir chat');
+    await tester.ensureVisible(openChatButton);
+    await tester.pumpAndSettle();
+    expect(openChatButton, findsOneWidget);
   });
 }
 
@@ -107,6 +113,13 @@ class FakeNearbyTransport implements NearbyTransport {
 
   @override
   Future<void> sendMessage(ChatMessage message) async {}
+
+  @override
+  Future<void> sendEdit({
+    required String endpointId,
+    required String targetMessageId,
+    required String newText,
+  }) async {}
 
   @override
   Future<void> start(String displayName) async {

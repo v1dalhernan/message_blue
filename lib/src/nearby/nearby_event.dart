@@ -52,8 +52,23 @@ class MessageReceived extends NearbyEvent {
   final ChatMessage message;
 }
 
+class MessageEdited extends NearbyEvent {
+  const MessageEdited({
+    required this.endpointId,
+    required this.targetMessageId,
+    required this.newText,
+    required this.editedAt,
+  });
+
+  final String endpointId;
+  final String targetMessageId;
+  final String newText;
+  final DateTime editedAt;
+}
+
 class NearbyFailure extends NearbyEvent {
   const NearbyFailure(this.message);
 
   final String message;
 }
+

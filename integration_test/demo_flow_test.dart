@@ -27,11 +27,17 @@ void main() {
     expect(find.text('Confirma la solicitud'), findsOneWidget);
     expect(find.text('4821'), findsOneWidget);
 
-    await tester.tap(find.text('Aceptar'));
+    final acceptButton = find.text('Aceptar');
+    await tester.ensureVisible(acceptButton);
+    await tester.pumpAndSettle();
+    await tester.tap(acceptButton);
     await tester.pumpAndSettle(const Duration(milliseconds: 800));
 
     expect(find.text('Conectado'), findsOneWidget);
-    await tester.tap(find.text('Abrir chat'));
+    final openChatButton = find.text('Abrir chat');
+    await tester.ensureVisible(openChatButton);
+    await tester.pumpAndSettle();
+    await tester.tap(openChatButton);
     await tester.pumpAndSettle();
 
     expect(find.text('Cifrado E2E · AES-256-GCM'), findsOneWidget);

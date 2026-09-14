@@ -12,21 +12,16 @@ import 'package:record/record.dart';
 import '../chat_controller.dart';
 import '../models/chat_message.dart';
 
-class PeerChatPage extends StatefulWidget {
-  const PeerChatPage({
-    super.key,
-    required this.controller,
-    required this.endpointId,
-  });
+class MeshGroupChatPage extends StatefulWidget {
+  const MeshGroupChatPage({super.key, required this.controller});
 
   final ChatController controller;
-  final String endpointId;
 
   @override
-  State<PeerChatPage> createState() => _PeerChatPageState();
+  State<MeshGroupChatPage> createState() => _MeshGroupChatPageState();
 }
 
-class _PeerChatPageState extends State<PeerChatPage> {
+class _MeshGroupChatPageState extends State<MeshGroupChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
@@ -54,8 +49,7 @@ class _PeerChatPageState extends State<PeerChatPage> {
 
   Future<void> _send() async {
     if (_editingMessage != null) {
-      final success = await widget.controller.editMessage(
-        widget.endpointId,
+      final success = await widget.controller.editGroupMessage(
         _editingMessage!.id,
         _messageController.text,
       );
@@ -66,10 +60,7 @@ class _PeerChatPageState extends State<PeerChatPage> {
       return;
     }
 
-    final sent = await widget.controller.send(
-      widget.endpointId,
-      _messageController.text,
-    );
+    final sent = await widget.controller.sendGroupText(_messageController.text);
     if (!mounted || !sent) return;
     _messageController.clear();
     _scrollToBottom();
@@ -86,12 +77,12 @@ class _PeerChatPageState extends State<PeerChatPage> {
       if (photo == null || !mounted) return;
 
       final file = File(photo.path);
-      await widget.controller.sendImage(widget.endpointId, file);
+      await widget.controller.sendGroupImage(file);
       _scrollToBottom();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo cargar la imagen: $e')),
+        SnackBar(content: Text('Error al adjuntar imagen: $e')),
       );
     }
   }
@@ -147,55 +138,91 @@ class _PeerChatPageState extends State<PeerChatPage> {
     });
   }
 
+  void _showMeshInfo() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.hub_outlined),
+            SizedBox(width: 8),
+            Text('Red Mesh (Enrutamiento)'),
+          ],
+        ),
+        content: const Text(
+          'En esta sala grupal todos los dispositivos están mezclados.\n\n'
+          'Cada mensaje se envía cifrado a todos tus contactos directos. '
+          'Si un dispositivo recibe un mensaje nuevo, lo retransmite automáticamente '
+          'a sus otros vecinos cercanos (hasta 5 saltos) para ampliar la cobertura sin requerir Internet.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
-        final peer = widget.controller.peerById(widget.endpointId);
-        final messages = widget.controller.messagesFor(widget.endpointId);
-        final isConnected = peer?.isConnected ?? false;
+        final messages = widget.controller.groupMessages;
+        final connectedCount = widget.controller.connectedCount;
+        final hasConnected = connectedCount > 0;
 
         return Scaffold(
           appBar: AppBar(
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(peer?.name ?? 'Dispositivo'),
+                const Text('Sala Mezclada'),
                 Text(
-                  isConnected ? 'Cifrado E2E · AES-256-GCM' : 'Sin conexión',
+                  hasConnected
+                      ? '$connectedCount nodo${connectedCount > 1 ? 's' : ''} en la malla local'
+                      : 'Sin dispositivos conectados',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
             ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.info_outline),
+                tooltip: 'Acerca de la Red Mesh',
+                onPressed: _showMeshInfo,
+              ),
+              const SizedBox(width: 8),
+            ],
           ),
           body: SafeArea(
             child: Column(
               children: [
                 Expanded(
                   child: messages.isEmpty
-                      ? const _EmptyConversation()
+                      ? const _EmptyGroupConversation()
                       : ListView.builder(
                           controller: _scrollController,
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
                           itemCount: messages.length,
                           itemBuilder: (context, index) {
                             final msg = messages[index];
-                            return _MessageBubble(
+                            return _GroupMessageBubble(
                               message: msg,
                               onEdit: () => _startEditing(msg),
                             );
                           },
                         ),
                 ),
-                _Composer(
+                _GroupComposer(
                   controller: _messageController,
-                  enabled: isConnected,
+                  enabled: hasConnected,
                   editingMessage: _editingMessage,
                   onCancelEdit: _cancelEditing,
                   onSend: _send,
                   onPickImage: _showImageSourceDialog,
-                  endpointId: widget.endpointId,
                   chatController: widget.controller,
                   onMediaSent: _scrollToBottom,
                 ),
@@ -208,14 +235,28 @@ class _PeerChatPageState extends State<PeerChatPage> {
   }
 }
 
-class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({
+class _GroupMessageBubble extends StatelessWidget {
+  const _GroupMessageBubble({
     required this.message,
     required this.onEdit,
   });
 
   final ChatMessage message;
   final VoidCallback onEdit;
+
+  Color _authorColor(String name) {
+    final hash = name.hashCode;
+    const colors = [
+      Colors.indigo,
+      Colors.teal,
+      Colors.deepOrange,
+      Colors.purple,
+      Colors.blueGrey,
+      Colors.brown,
+      Colors.cyan,
+    ];
+    return colors[hash.abs() % colors.length];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -242,14 +283,36 @@ class _MessageBubble extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (!outgoing)
-                Text(
-                  message.author,
-                  style: TextStyle(
-                    color: colors.primary,
-                    fontWeight: FontWeight.w700,
-                  ),
+              if (!outgoing) ...[
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      message.author,
+                      style: TextStyle(
+                        color: _authorColor(message.author),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (message.hopCount > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: colors.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${message.hopCount} salto${message.hopCount > 1 ? 's' : ''}',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
+                const SizedBox(height: 2),
+              ],
               _buildContent(context),
               const SizedBox(height: 4),
               Row(
@@ -270,14 +333,7 @@ class _MessageBubble extends StatelessWidget {
                   ],
                   if (outgoing) ...[
                     const SizedBox(width: 5),
-                    Icon(
-                      switch (message.delivery) {
-                        MessageDelivery.sending => Icons.schedule,
-                        MessageDelivery.sent => Icons.check,
-                        MessageDelivery.failed => Icons.error_outline,
-                      },
-                      size: 14,
-                    ),
+                    const Icon(Icons.done_all, size: 14),
                   ],
                 ],
               ),
@@ -294,7 +350,7 @@ class _MessageBubble extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _ImageBubble(message: message),
+            _GroupImageWidget(message: message),
             if (message.text.isNotEmpty) ...[
               const SizedBox(height: 6),
               Text(message.text),
@@ -302,7 +358,7 @@ class _MessageBubble extends StatelessWidget {
           ],
         );
       case ChatMessageType.audio:
-        return _AudioBubble(
+        return _GroupAudioWidget(
           message: message,
           outgoing: message.direction == MessageDirection.outgoing,
         );
@@ -332,14 +388,15 @@ class _MessageBubble extends StatelessWidget {
                     Clipboard.setData(ClipboardData(text: message.text));
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Texto copiado al portapapeles')),
+                      const SnackBar(
+                          content: Text('Texto copiado al portapapeles')),
                     );
                   },
                 ),
               if (outgoing && message.type == ChatMessageType.text)
                 ListTile(
                   leading: const Icon(Icons.edit_outlined),
-                  title: const Text('Editar mensaje'),
+                  title: const Text('Editar mensaje grupal'),
                   onTap: () {
                     Navigator.pop(context);
                     onEdit();
@@ -359,8 +416,8 @@ class _MessageBubble extends StatelessWidget {
   }
 }
 
-class _ImageBubble extends StatelessWidget {
-  const _ImageBubble({required this.message});
+class _GroupImageWidget extends StatelessWidget {
+  const _GroupImageWidget({required this.message});
 
   final ChatMessage message;
 
@@ -410,17 +467,17 @@ class _ImageBubble extends StatelessWidget {
   }
 }
 
-class _AudioBubble extends StatefulWidget {
-  const _AudioBubble({required this.message, required this.outgoing});
+class _GroupAudioWidget extends StatefulWidget {
+  const _GroupAudioWidget({required this.message, required this.outgoing});
 
   final ChatMessage message;
   final bool outgoing;
 
   @override
-  State<_AudioBubble> createState() => _AudioBubbleState();
+  State<_GroupAudioWidget> createState() => _GroupAudioWidgetState();
 }
 
-class _AudioBubbleState extends State<_AudioBubble> {
+class _GroupAudioWidgetState extends State<_GroupAudioWidget> {
   final AudioPlayer _player = AudioPlayer();
   PlayerState _state = PlayerState.stopped;
   Duration _position = Duration.zero;
@@ -464,7 +521,7 @@ class _AudioBubbleState extends State<_AudioBubble> {
       } else if (widget.message.mediaBase64 != null) {
         final bytes = base64Decode(widget.message.mediaBase64!);
         final dir = await getTemporaryDirectory();
-        final tmp = File('${dir.path}/temp_play_${widget.message.id}.m4a');
+        final tmp = File('${dir.path}/temp_group_play_${widget.message.id}.m4a');
         await tmp.writeAsBytes(bytes);
         await _player.play(DeviceFileSource(tmp.path));
       }
@@ -502,7 +559,9 @@ class _AudioBubbleState extends State<_AudioBubble> {
             SizedBox(
               width: 140,
               child: LinearProgressIndicator(
-                value: totalSeconds > 0 ? (currentSeconds / totalSeconds).clamp(0.0, 1.0) : 0.0,
+                value: totalSeconds > 0
+                    ? (currentSeconds / totalSeconds).clamp(0.0, 1.0)
+                    : 0.0,
                 backgroundColor: colors.outlineVariant,
               ),
             ),
@@ -524,15 +583,14 @@ class _AudioBubbleState extends State<_AudioBubble> {
   }
 }
 
-class _Composer extends StatefulWidget {
-  const _Composer({
+class _GroupComposer extends StatefulWidget {
+  const _GroupComposer({
     required this.controller,
     required this.enabled,
     required this.editingMessage,
     required this.onCancelEdit,
     required this.onSend,
     required this.onPickImage,
-    required this.endpointId,
     required this.chatController,
     required this.onMediaSent,
   });
@@ -543,15 +601,14 @@ class _Composer extends StatefulWidget {
   final VoidCallback onCancelEdit;
   final VoidCallback onSend;
   final VoidCallback onPickImage;
-  final String endpointId;
   final ChatController chatController;
   final VoidCallback onMediaSent;
 
   @override
-  State<_Composer> createState() => _ComposerState();
+  State<_GroupComposer> createState() => _GroupComposerState();
 }
 
-class _ComposerState extends State<_Composer> {
+class _GroupComposerState extends State<_GroupComposer> {
   final AudioRecorder _audioRecorder = AudioRecorder();
   bool _isRecording = false;
   int _recordSeconds = 0;
@@ -571,7 +628,7 @@ class _ComposerState extends State<_Composer> {
       if (await _audioRecorder.hasPermission()) {
         final dir = await getTemporaryDirectory();
         final path =
-            '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+            '${dir.path}/group_voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
         await _audioRecorder.start(
           const RecordConfig(encoder: AudioEncoder.aacLc),
           path: path,
@@ -611,11 +668,7 @@ class _ComposerState extends State<_Composer> {
       if (path != null && duration > 0) {
         final file = File(path);
         if (await file.exists()) {
-          await widget.chatController.sendAudio(
-            widget.endpointId,
-            file,
-            duration,
-          );
+          await widget.chatController.sendGroupAudio(file, duration);
           widget.onMediaSent();
         }
       }
@@ -665,7 +718,7 @@ class _ComposerState extends State<_Composer> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Editando mensaje: "${widget.editingMessage!.text}"',
+                      'Editando mensaje grupal: "${widget.editingMessage!.text}"',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall,
@@ -686,19 +739,22 @@ class _ComposerState extends State<_Composer> {
                     children: [
                       IconButton(
                         tooltip: 'Cancelar grabación',
-                        icon: const Icon(Icons.delete_outline, color: Colors.red),
+                        icon:
+                            const Icon(Icons.delete_outline, color: Colors.red),
                         onPressed: _cancelRecording,
                       ),
                       const SizedBox(width: 8),
-                      const Icon(Icons.fiber_manual_record, color: Colors.red, size: 16),
+                      const Icon(Icons.fiber_manual_record,
+                          color: Colors.red, size: 16),
                       const SizedBox(width: 6),
                       Text(
                         'Grabando: ${_recordSeconds}s',
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, color: Colors.red),
                       ),
                       const Spacer(),
                       IconButton.filled(
-                        tooltip: 'Enviar nota de voz',
+                        tooltip: 'Enviar nota de voz grupal',
                         icon: const Icon(Icons.send),
                         onPressed: _stopAndSendRecording,
                       ),
@@ -728,23 +784,28 @@ class _ComposerState extends State<_Composer> {
                           decoration: InputDecoration(
                             hintText: widget.enabled
                                 ? (widget.editingMessage != null
-                                    ? 'Edita tu mensaje...'
-                                    : 'Escribe un mensaje...')
-                                : 'Dispositivo desconectado',
+                                    ? 'Edita tu mensaje grupal...'
+                                    : 'Mensaje para todos en la malla...')
+                                : 'Conecta al menos un dispositivo',
                             counterText: '',
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 14,
                               vertical: 10,
                             ),
                           ),
-                          onSubmitted: widget.enabled ? (_) => widget.onSend() : null,
+                          onSubmitted:
+                              widget.enabled ? (_) => widget.onSend() : null,
                         ),
                       ),
                       const SizedBox(width: 6),
                       IconButton.filled(
-                        tooltip: widget.editingMessage != null ? 'Guardar' : 'Enviar',
+                        tooltip: widget.editingMessage != null
+                            ? 'Guardar'
+                            : 'Enviar a la malla',
                         onPressed: widget.enabled ? widget.onSend : null,
-                        icon: Icon(widget.editingMessage != null ? Icons.check : Icons.send),
+                        icon: Icon(widget.editingMessage != null
+                            ? Icons.check
+                            : Icons.send),
                       ),
                     ],
                   ),
@@ -755,8 +816,8 @@ class _ComposerState extends State<_Composer> {
   }
 }
 
-class _EmptyConversation extends StatelessWidget {
-  const _EmptyConversation();
+class _EmptyGroupConversation extends StatelessWidget {
+  const _EmptyGroupConversation();
 
   @override
   Widget build(BuildContext context) {
@@ -766,10 +827,15 @@ class _EmptyConversation extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.chat_bubble_outline, size: 44),
+            Icon(Icons.hub_outlined, size: 44),
             SizedBox(height: 12),
             Text(
-              'La conexión está lista. Envía texto, fotos o notas de voz sin Internet.',
+              'Sala Mezclada (Malla Local)',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            SizedBox(height: 6),
+            Text(
+              'Cualquier mensaje, foto o nota de voz enviada aquí se transmitirá a todos los dispositivos cercanos conectados.',
               textAlign: TextAlign.center,
             ),
           ],

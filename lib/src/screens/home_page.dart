@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../chat_controller.dart';
 import '../models/nearby_peer.dart';
 import '../nearby/nearby_transport.dart';
+import 'mesh_group_chat_page.dart';
 import 'peer_chat_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -266,6 +267,8 @@ class _NetworkBody extends StatelessWidget {
             message: 'Modo emulador: los pares son virtuales, pero el cifrado y el flujo del chat son reales.',
           ),
         ],
+        const SizedBox(height: 16),
+        _MeshGroupCard(controller: controller),
         const SizedBox(height: 24),
         Text(
           'Dispositivos cercanos',
@@ -557,3 +560,90 @@ class _ErrorCard extends StatelessWidget {
     );
   }
 }
+
+class _MeshGroupCard extends StatelessWidget {
+  const _MeshGroupCard({required this.controller});
+
+  final ChatController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final count = controller.connectedCount;
+    final isEnabled = count > 0;
+
+    return Card(
+      color: colors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: isEnabled
+              ? colors.primary.withAlpha(120)
+              : colors.outlineVariant.withAlpha(80),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: isEnabled
+                      ? colors.primaryContainer
+                      : colors.surfaceContainerHighest,
+                  child: Icon(
+                    Icons.hub,
+                    color: isEnabled ? colors.onPrimaryContainer : null,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Sala Mezclada (Red Mesh)',
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                      ),
+                      Text(
+                        isEnabled
+                            ? '$count nodo${count > 1 ? 's' : ''} conectado${count > 1 ? 's' : ''} en la red local'
+                            : 'Conecta al menos un dispositivo para entrar',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: isEnabled
+                                  ? colors.primary
+                                  : colors.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            FilledButton.tonalIcon(
+              onPressed: isEnabled
+                  ? () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              MeshGroupChatPage(controller: controller),
+                        ),
+                      );
+                    }
+                  : null,
+              icon: const Icon(Icons.groups_outlined),
+              label: const Text('Abrir Sala Mezclada'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

@@ -209,6 +209,19 @@ class NearbyConnectionsTransport implements NearbyTransport {
 
       final session = await _sessionFor(endpointId);
       final clearText = await session.decrypt(bytes);
+      final jsonPayload = jsonDecode(utf8.decode(clearText));
+      if (jsonPayload is Map<String, dynamic> && jsonPayload['type'] == 'edit') {
+        final edit = ChatMessageEdit.fromJson(jsonPayload);
+        _events.add(
+          MessageEdited(
+            endpointId: endpointId,
+            targetMessageId: edit.targetId,
+            newText: edit.text,
+            editedAt: edit.editedAt,
+          ),
+        );
+        return;
+      }
       final message = ChatMessage.fromPayload(
         endpointId: endpointId,
         bytes: clearText,
@@ -273,6 +286,31 @@ class NearbyConnectionsTransport implements NearbyTransport {
   @override
   Future<void> sendMessage(ChatMessage message) {
     return _sendEncryptedMessage(message);
+  }
+
+  @override
+  Future<void> sendEdit({
+    required String endpointId,
+    required String targetMessageId,
+    required String newText,
+  }) async {
+    final session = await _sessionFor(endpointId);
+    if (!session.isReady) {
+      throw const NearbySetupException(
+        'El intercambio de claves todavía no ha terminado.',
+      );
+    }
+    final edit = ChatMessageEdit(
+      id: 'edit-${DateTime.now().microsecondsSinceEpoch}',
+      targetId: targetMessageId,
+      text: newText,
+      editedAt: DateTime.now(),
+    );
+    final encrypted = await session.encrypt(edit.toPayload());
+    await _nearby.sendBytesPayload(
+      endpointId,
+      Uint8List.fromList(encrypted),
+    );
   }
 
   Future<void> _sendEncryptedMessage(ChatMessage message) async {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import '../models/chat_message.dart';
 import 'nearby_event.dart';
@@ -121,6 +122,39 @@ class DemoNearbyTransport implements NearbyTransport {
         ),
       ),
     );
+  }
+
+  @override
+  Future<void> sendEdit({
+    required String endpointId,
+    required String targetMessageId,
+    required String newText,
+  }) async {
+    final channel = _channels[endpointId];
+    if (channel == null) throw StateError('El canal cifrado no está listo.');
+
+    final edit = ChatMessageEdit(
+      id: 'demo-edit-${DateTime.now().microsecondsSinceEpoch}',
+      targetId: targetMessageId,
+      text: newText,
+      editedAt: DateTime.now(),
+    );
+
+    final encrypted = await channel.encryptFromLocal(edit.toPayload());
+    lastWirePayload = encrypted;
+    final remoteClearText = await channel.decryptAtRemote(encrypted);
+    final decoded = jsonDecode(utf8.decode(remoteClearText));
+    if (decoded is Map<String, dynamic> && decoded['type'] == 'edit') {
+      final parsed = ChatMessageEdit.fromJson(decoded);
+      _events.add(
+        MessageEdited(
+          endpointId: endpointId,
+          targetMessageId: parsed.targetId,
+          newText: parsed.text,
+          editedAt: parsed.editedAt,
+        ),
+      );
+    }
   }
 
   @override

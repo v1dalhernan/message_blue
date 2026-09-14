@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'src/nearby/demo_nearby_transport.dart';
+import 'src/nearby/lan_socket_transport.dart';
 import 'src/nearby/nearby_connections_transport.dart';
 import 'src/nearby/nearby_transport.dart';
 import 'src/screens/home_page.dart';
@@ -43,6 +46,11 @@ class BlueMeshApp extends StatelessWidget {
 
   NearbyTransport _defaultTransport() {
     const demoMode = bool.fromEnvironment('DEMO_MODE');
-    return demoMode ? DemoNearbyTransport() : NearbyConnectionsTransport();
+    if (demoMode) return DemoNearbyTransport();
+
+    const lanMode = bool.fromEnvironment('LAN_MODE');
+    if (lanMode || !Platform.isAndroid) return LanSocketTransport();
+
+    return NearbyConnectionsTransport();
   }
 }

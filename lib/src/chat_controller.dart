@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'models/chat_message.dart';
 import 'models/nearby_peer.dart';
@@ -16,6 +19,7 @@ class ChatController extends ChangeNotifier {
   late final StreamSubscription<NearbyEvent> _subscription;
   final Map<String, NearbyPeer> _peers = {};
   final Map<String, List<ChatMessage>> _messages = {};
+  final Set<String> _seenMessageIds = {};
 
   bool _isRunning = false;
   bool _isBusy = false;
@@ -28,6 +32,14 @@ class ChatController extends ChangeNotifier {
   bool get isBusy => _isBusy;
   String get displayName => _displayName;
   String? get errorMessage => _errorMessage;
+
+  int get connectedCount => _peers.values.where((p) => p.isConnected).length;
+
+  List<NearbyPeer> get connectedPeers =>
+      _peers.values.where((p) => p.isConnected).toList();
+
+  List<ChatMessage> get groupMessages =>
+      List.unmodifiable(_messages[ChatMessage.groupEndpointId] ?? const []);
 
   List<NearbyPeer> get peers {
     final result = _peers.values.toList();
@@ -76,6 +88,7 @@ class ChatController extends ChangeNotifier {
       _isRunning = false;
       _peers.clear();
       _messages.clear();
+      _seenMessageIds.clear();
     } catch (error) {
       _setError(error.toString());
     } finally {
@@ -100,15 +113,15 @@ class ChatController extends ChangeNotifier {
   }
 
   Future<void> approve(String endpointId) async {
+    final peer = _peers[endpointId];
+    if (peer != null && !peer.isConnected) {
+      _peers[endpointId] = peer.copyWith(
+        status: PeerConnectionStatus.connecting,
+      );
+      notifyListeners();
+    }
     try {
       await _transport.acceptConnection(endpointId);
-      final peer = _peers[endpointId];
-      if (peer != null) {
-        _peers[endpointId] = peer.copyWith(
-          status: PeerConnectionStatus.connecting,
-        );
-      }
-      notifyListeners();
     } catch (error) {
       _setError(error.toString());
     }
@@ -163,6 +176,275 @@ class ChatController extends ChangeNotifier {
     }
   }
 
+  Future<bool> sendGroupText(String rawText) async {
+    final text = rawText.trim();
+    if (text.isEmpty || connectedCount == 0) return false;
+
+    final now = DateTime.now();
+    final messageId =
+        'group-${now.microsecondsSinceEpoch}-${_displayName.hashCode}';
+    _seenMessageIds.add(messageId);
+
+    final localMsg = ChatMessage(
+      id: messageId,
+      endpointId: ChatMessage.groupEndpointId,
+      author: _displayName,
+      text: text,
+      sentAt: now,
+      direction: MessageDirection.outgoing,
+      delivery: MessageDelivery.sent,
+      isGroup: true,
+      hopCount: 0,
+    );
+
+    final groupList =
+        _messages.putIfAbsent(ChatMessage.groupEndpointId, () => []);
+    groupList.add(localMsg);
+    notifyListeners();
+
+    for (final peer in connectedPeers) {
+      unawaited(
+        _transport.sendMessage(
+          localMsg.copyWith(endpointId: peer.id),
+        ).catchError((e) {
+          debugPrint('Error enviando a ${peer.name}: $e');
+        }),
+      );
+    }
+    return true;
+  }
+
+  Future<bool> sendImage(
+    String endpointId,
+    File imageFile, {
+    String caption = '',
+  }) async {
+    final peer = _peers[endpointId];
+    if (peer == null || !peer.isConnected) return false;
+
+    final bytes = await imageFile.readAsBytes();
+    final now = DateTime.now();
+    var message = ChatMessage(
+      id: '${now.microsecondsSinceEpoch}-${_displayName.hashCode}',
+      endpointId: endpointId,
+      author: _displayName,
+      text: caption,
+      sentAt: now,
+      direction: MessageDirection.outgoing,
+      delivery: MessageDelivery.sending,
+      type: ChatMessageType.image,
+      mediaPath: imageFile.path,
+      mediaBase64: base64Encode(bytes),
+    );
+
+    final messages = _messages.putIfAbsent(endpointId, () => []);
+    messages.add(message);
+    notifyListeners();
+
+    try {
+      await _transport.sendMessage(message);
+      message = message.copyWith(delivery: MessageDelivery.sent);
+      _replaceMessage(endpointId, message);
+      return true;
+    } catch (error) {
+      message = message.copyWith(delivery: MessageDelivery.failed);
+      _replaceMessage(endpointId, message);
+      _setError('No se pudo enviar la imagen: $error');
+      return false;
+    }
+  }
+
+  Future<bool> sendGroupImage(File imageFile, {String caption = ''}) async {
+    if (connectedCount == 0) return false;
+
+    final bytes = await imageFile.readAsBytes();
+    final now = DateTime.now();
+    final messageId =
+        'group-img-${now.microsecondsSinceEpoch}-${_displayName.hashCode}';
+    _seenMessageIds.add(messageId);
+
+    final localMsg = ChatMessage(
+      id: messageId,
+      endpointId: ChatMessage.groupEndpointId,
+      author: _displayName,
+      text: caption,
+      sentAt: now,
+      direction: MessageDirection.outgoing,
+      delivery: MessageDelivery.sent,
+      type: ChatMessageType.image,
+      mediaPath: imageFile.path,
+      mediaBase64: base64Encode(bytes),
+      isGroup: true,
+      hopCount: 0,
+    );
+
+    final groupList =
+        _messages.putIfAbsent(ChatMessage.groupEndpointId, () => []);
+    groupList.add(localMsg);
+    notifyListeners();
+
+    for (final peer in connectedPeers) {
+      unawaited(
+        _transport.sendMessage(
+          localMsg.copyWith(endpointId: peer.id),
+        ).catchError((e) {
+          debugPrint('Error enviando imagen grupal a ${peer.name}: $e');
+        }),
+      );
+    }
+    return true;
+  }
+
+  Future<bool> sendAudio(
+    String endpointId,
+    File audioFile,
+    int durationSeconds,
+  ) async {
+    final peer = _peers[endpointId];
+    if (peer == null || !peer.isConnected) return false;
+
+    final bytes = await audioFile.readAsBytes();
+    final now = DateTime.now();
+    var message = ChatMessage(
+      id: '${now.microsecondsSinceEpoch}-${_displayName.hashCode}',
+      endpointId: endpointId,
+      author: _displayName,
+      text: 'Nota de voz (${durationSeconds}s)',
+      sentAt: now,
+      direction: MessageDirection.outgoing,
+      delivery: MessageDelivery.sending,
+      type: ChatMessageType.audio,
+      mediaPath: audioFile.path,
+      mediaBase64: base64Encode(bytes),
+      durationSeconds: durationSeconds,
+    );
+
+    final messages = _messages.putIfAbsent(endpointId, () => []);
+    messages.add(message);
+    notifyListeners();
+
+    try {
+      await _transport.sendMessage(message);
+      message = message.copyWith(delivery: MessageDelivery.sent);
+      _replaceMessage(endpointId, message);
+      return true;
+    } catch (error) {
+      message = message.copyWith(delivery: MessageDelivery.failed);
+      _replaceMessage(endpointId, message);
+      _setError('No se pudo enviar la nota de voz: $error');
+      return false;
+    }
+  }
+
+  Future<bool> sendGroupAudio(File audioFile, int durationSeconds) async {
+    if (connectedCount == 0) return false;
+
+    final bytes = await audioFile.readAsBytes();
+    final now = DateTime.now();
+    final messageId =
+        'group-audio-${now.microsecondsSinceEpoch}-${_displayName.hashCode}';
+    _seenMessageIds.add(messageId);
+
+    final localMsg = ChatMessage(
+      id: messageId,
+      endpointId: ChatMessage.groupEndpointId,
+      author: _displayName,
+      text: 'Nota de voz (${durationSeconds}s)',
+      sentAt: now,
+      direction: MessageDirection.outgoing,
+      delivery: MessageDelivery.sent,
+      type: ChatMessageType.audio,
+      mediaPath: audioFile.path,
+      mediaBase64: base64Encode(bytes),
+      durationSeconds: durationSeconds,
+      isGroup: true,
+      hopCount: 0,
+    );
+
+    final groupList =
+        _messages.putIfAbsent(ChatMessage.groupEndpointId, () => []);
+    groupList.add(localMsg);
+    notifyListeners();
+
+    for (final peer in connectedPeers) {
+      unawaited(
+        _transport.sendMessage(
+          localMsg.copyWith(endpointId: peer.id),
+        ).catchError((e) {
+          debugPrint('Error enviando audio grupal a ${peer.name}: $e');
+        }),
+      );
+    }
+    return true;
+  }
+
+  Future<bool> editMessage(
+    String endpointId,
+    String messageId,
+    String newText,
+  ) async {
+    final text = newText.trim();
+    if (text.isEmpty) return false;
+    final list = _messages[endpointId];
+    if (list == null) return false;
+    final index = list.indexWhere((m) => m.id == messageId);
+    if (index < 0) return false;
+
+    final original = list[index];
+    final now = DateTime.now();
+    final updated = original.copyWith(
+      text: text,
+      isEdited: true,
+      editedAt: now,
+    );
+    list[index] = updated;
+    notifyListeners();
+
+    try {
+      await _transport.sendEdit(
+        endpointId: endpointId,
+        targetMessageId: messageId,
+        newText: text,
+      );
+      return true;
+    } catch (e) {
+      _setError('No se pudo editar el mensaje: $e');
+      return false;
+    }
+  }
+
+  Future<bool> editGroupMessage(String messageId, String newText) async {
+    final text = newText.trim();
+    if (text.isEmpty) return false;
+    final list = _messages[ChatMessage.groupEndpointId];
+    if (list == null) return false;
+    final index = list.indexWhere((m) => m.id == messageId);
+    if (index < 0) return false;
+
+    final original = list[index];
+    final now = DateTime.now();
+    final updated = original.copyWith(
+      text: text,
+      isEdited: true,
+      editedAt: now,
+    );
+    list[index] = updated;
+    notifyListeners();
+
+    for (final peer in connectedPeers) {
+      unawaited(
+        _transport.sendEdit(
+          endpointId: peer.id,
+          targetMessageId: messageId,
+          newText: text,
+        ).catchError((e) {
+          debugPrint('Error enviando edición grupal a ${peer.name}: $e');
+        }),
+      );
+    }
+    return true;
+  }
+
   void clearError() {
     if (_errorMessage == null) return;
     _errorMessage = null;
@@ -209,13 +491,91 @@ class ChatController extends ChangeNotifier {
           shouldNotify: false,
         );
       case MessageReceived():
-        _messages
-            .putIfAbsent(event.message.endpointId, () => [])
-            .add(event.message);
+        unawaited(_processIncomingMessage(event.message));
+      case MessageEdited():
+        _processIncomingEdit(event);
       case NearbyFailure():
         _errorMessage = event.message;
     }
     notifyListeners();
+  }
+
+  Future<void> _processIncomingMessage(ChatMessage raw) async {
+    var message = raw;
+    if (message.mediaBase64 != null && message.mediaPath == null) {
+      try {
+        final bytes = base64Decode(message.mediaBase64!);
+        final dir = await getTemporaryDirectory();
+        final ext = message.type == ChatMessageType.image ? 'jpg' : 'm4a';
+        final file = File('${dir.path}/media_${message.id}.$ext');
+        await file.writeAsBytes(bytes);
+        message = message.copyWith(mediaPath: file.path);
+      } catch (e) {
+        debugPrint('Error guardando archivo multimedia recibido: $e');
+      }
+    }
+
+    if (message.isGroup) {
+      // Loop prevention / deduplicación
+      if (!_seenMessageIds.add(message.id)) return;
+
+      final targetList =
+          _messages.putIfAbsent(ChatMessage.groupEndpointId, () => []);
+      targetList.add(message);
+      notifyListeners();
+
+      // Mesh Relay: Si no excede 5 saltos, retransmitir a los demás pares conectados
+      if (message.hopCount < 5) {
+        final relayed = message.copyWith(hopCount: message.hopCount + 1);
+        for (final peer in connectedPeers) {
+          if (peer.id != raw.endpointId) {
+            unawaited(
+              _transport
+                  .sendMessage(relayed.copyWith(endpointId: peer.id))
+                  .catchError((e) {
+                debugPrint(
+                    'Error retransmitiendo salto mesh a ${peer.name}: $e');
+              }),
+            );
+          }
+        }
+      }
+      return;
+    }
+
+    _messages.putIfAbsent(message.endpointId, () => []).add(message);
+    notifyListeners();
+  }
+
+  void _processIncomingEdit(MessageEdited event) {
+    // Buscar en chat 1 a 1
+    final list = _messages[event.endpointId];
+    if (list != null) {
+      final index = list.indexWhere((m) => m.id == event.targetMessageId);
+      if (index >= 0) {
+        list[index] = list[index].copyWith(
+          text: event.newText,
+          isEdited: true,
+          editedAt: event.editedAt,
+        );
+        notifyListeners();
+        return;
+      }
+    }
+
+    // Buscar en sala grupal
+    final groupList = _messages[ChatMessage.groupEndpointId];
+    if (groupList != null) {
+      final index = groupList.indexWhere((m) => m.id == event.targetMessageId);
+      if (index >= 0) {
+        groupList[index] = groupList[index].copyWith(
+          text: event.newText,
+          isEdited: true,
+          editedAt: event.editedAt,
+        );
+        notifyListeners();
+      }
+    }
   }
 
   void _updatePeerStatus(

@@ -22,6 +22,12 @@ abstract interface class NearbyTransport {
 
   Future<void> sendMessage(ChatMessage message);
 
+  Future<void> sendEdit({
+    required String endpointId,
+    required String targetMessageId,
+    required String newText,
+  });
+
   Future<void> dispose();
 }
 
