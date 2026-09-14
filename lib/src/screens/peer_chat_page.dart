@@ -209,14 +209,25 @@ class _PeerChatPageState extends State<PeerChatPage> {
                           ],
                         ],
                       ),
-                      Text(
-                        isConnected
-                            ? 'Cifrado E2E · AES-256-GCM'
-                            : 'Fuera de línea · Buzón activo',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: isConnected ? Colors.green : Colors.amber.shade800,
-                              fontWeight: isConnected ? FontWeight.normal : FontWeight.w600,
-                            ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isConnected ? Icons.lock : Icons.cloud_off,
+                            size: 13,
+                            color: isConnected ? Colors.teal : Colors.amber.shade800,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            isConnected
+                                ? 'Cifrado E2E · AES-256-GCM'
+                                : 'Fuera de línea · Buzón activo',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: isConnected ? Colors.teal : Colors.amber.shade800,
+                                  fontWeight: isConnected ? FontWeight.w500 : FontWeight.w600,
+                                ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -227,6 +238,32 @@ class _PeerChatPageState extends State<PeerChatPage> {
           body: SafeArea(
             child: Column(
               children: [
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF9E6),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFFFEBAA)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.lock, size: 14, color: Color(0xFF856404)),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Los mensajes en este chat están protegidos con cifrado de extremo a extremo (AES-256-GCM). Nadie fuera de este chat puede leerlos.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF856404),
+                            height: 1.25,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 Expanded(
                   child: messages.isEmpty
                       ? const _EmptyConversation()

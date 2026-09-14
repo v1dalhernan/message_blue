@@ -124,6 +124,30 @@ void main(List<String> args) {
                   mailbox.putIfAbsent(to, () => []).add(msg);
                 }
 
+              case 'update_profile':
+                if (currentClient != null) {
+                  final newName = msg['name'] as String?;
+                  final newAvatar = msg['avatar'] as String?;
+                  if (newName != null && newName.isNotEmpty) {
+                    currentClient!.name = newName;
+                  }
+                  if (newAvatar != null) {
+                    currentClient!.avatar = newAvatar;
+                  }
+                  print('👤 Perfil actualizado para ${currentClient!.name} (${currentClient!.id})');
+                  for (final peer in clients.values) {
+                    if (peer.id != currentClient!.id) {
+                      peer.send({
+                        'action': 'peer_updated',
+                        'endpointId': currentClient!.id,
+                        'name': currentClient!.name,
+                        'avatar': currentClient!.avatar,
+                        'uniqueId': currentClient!.uniqueId,
+                      });
+                    }
+                  }
+                }
+
               case 'disconnect':
                 final to = msg['to'] as String;
                 final target = clients[to];
@@ -170,10 +194,10 @@ class _ConnectedClient {
   });
 
   final String id;
-  final String name;
+  String name;
   final Socket socket;
   final String? uniqueId;
-  final String? avatar;
+  String? avatar;
   final String? pin;
 
   void send(Map<String, dynamic> data) {

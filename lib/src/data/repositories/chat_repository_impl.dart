@@ -111,6 +111,16 @@ class ChatRepositoryImpl implements ChatRepository {
         );
         _notifyPeers();
 
+      case PeerUpdated(:final endpointId, :final name):
+        final existing = _peers[endpointId];
+        if (existing != null) {
+          _peers[endpointId] = existing.copyWith(
+            name: name ?? existing.name,
+            lastSeen: DateTime.now(),
+          );
+          _notifyPeers();
+        }
+
       case PeerLost(:final endpointId):
         _peers.remove(endpointId);
         _notifyPeers();

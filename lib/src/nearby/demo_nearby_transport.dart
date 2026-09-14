@@ -172,6 +172,9 @@ class DemoNearbyTransport implements NearbyTransport {
   }
 
   @override
+  Future<void> sendProfileUpdate({String? name, String? avatar}) async {}
+
+  @override
   Future<void> stop() async {
     _running = false;
     for (final channel in _channels.values) {

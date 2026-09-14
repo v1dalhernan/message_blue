@@ -180,11 +180,24 @@ class _MeshGroupChatPageState extends State<MeshGroupChatPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Sala Mezclada'),
-                Text(
-                  hasConnected
-                      ? '$connectedCount nodo${connectedCount > 1 ? 's' : ''} en la malla local'
-                      : 'Sin dispositivos conectados',
-                  style: Theme.of(context).textTheme.bodySmall,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      hasConnected ? Icons.lock : Icons.lock_open,
+                      size: 12,
+                      color: hasConnected ? Colors.teal : Colors.grey,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      hasConnected
+                          ? '$connectedCount nodo${connectedCount > 1 ? 's' : ''} · Cifrado Malla'
+                          : 'Sin dispositivos conectados',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: hasConnected ? Colors.teal : null,
+                          ),
+                    ),
+                  ],
                 ),
               ],
             ),

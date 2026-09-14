@@ -23,6 +23,20 @@ class PeerFound extends NearbyEvent {
   String? get personalPin => pin;
 }
 
+class PeerUpdated extends NearbyEvent {
+  const PeerUpdated({
+    required this.endpointId,
+    this.name,
+    this.avatar,
+    this.uniqueId,
+  });
+
+  final String endpointId;
+  final String? name;
+  final String? avatar;
+  final String? uniqueId;
+}
+
 class PeerLost extends NearbyEvent {
   const PeerLost(this.endpointId);
 

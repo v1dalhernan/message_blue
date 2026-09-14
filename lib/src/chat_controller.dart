@@ -112,11 +112,17 @@ class ChatController extends ChangeNotifier {
 
   Future<void> updateProfileAvatar(File imageFile) async {
     await UserProfileService.instance.setAvatarFromFile(imageFile);
+    await _transport.sendProfileUpdate(
+      avatar: UserProfileService.instance.localAvatarBase64,
+    );
     notifyListeners();
   }
 
   void setPresetAvatar(String preset) {
     UserProfileService.instance.setPresetAvatar(preset);
+    unawaited(_transport.sendProfileUpdate(
+      avatar: UserProfileService.instance.localAvatarBase64,
+    ));
     notifyListeners();
   }
 
@@ -125,6 +131,9 @@ class ChatController extends ChangeNotifier {
     if (trimmed.isNotEmpty) {
       _displayName = trimmed;
       UserProfileService.instance.setDisplayName(trimmed);
+      unawaited(_transport.sendProfileUpdate(
+        name: trimmed,
+      ));
       notifyListeners();
     }
   }
@@ -581,6 +590,21 @@ class ChatController extends ChangeNotifier {
           personalPin: event.personalPin ?? existing?.personalPin,
           isSpoofed: isSpoofed,
         );
+      case PeerUpdated():
+        final existing = _peers[event.endpointId];
+        if (existing != null) {
+          if (event.avatar != null) {
+            UserProfileService.instance.setPeerAvatar(
+              event.endpointId,
+              event.avatar,
+            );
+          }
+          _peers[event.endpointId] = existing.copyWith(
+            name: event.name ?? existing.name,
+            avatarBase64: event.avatar ?? existing.avatarBase64,
+            uniqueId: event.uniqueId ?? existing.uniqueId,
+          );
+        }
       case PeerLost():
         final peer = _peers[event.endpointId];
         if (peer != null && !peer.isConnected) {

@@ -125,6 +125,26 @@ class LanSocketTransport implements NearbyTransport {
             ),
           );
 
+        case 'peer_updated':
+          final id = msg['endpointId'] as String;
+          final name = msg['name'] as String?;
+          final avatar = msg['avatar'] as String?;
+          final uniqueId = msg['uniqueId'] as String?;
+          if (name != null) {
+            _peerNames[id] = name;
+          }
+          if (avatar != null) {
+            UserProfileService.instance.setPeerAvatar(id, avatar);
+          }
+          _events.add(
+            PeerUpdated(
+              endpointId: id,
+              name: name,
+              avatar: avatar,
+              uniqueId: uniqueId,
+            ),
+          );
+
         case 'peer_lost':
           final id = msg['endpointId'] as String;
           _peerNames.remove(id);
@@ -400,6 +420,15 @@ class LanSocketTransport implements NearbyTransport {
       'to': endpointId,
       'bytes': base64Encode(encrypted),
     });
+  }
+
+  @override
+  Future<void> sendProfileUpdate({String? name, String? avatar}) async {
+    if (!_running) return;
+    final data = <String, dynamic>{'action': 'update_profile'};
+    if (name != null) data['name'] = name;
+    if (avatar != null) data['avatar'] = avatar;
+    _sendFrame(data);
   }
 
   Future<SecureSession> _sessionFor(String endpointId) {

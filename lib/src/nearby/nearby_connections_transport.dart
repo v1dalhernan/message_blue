@@ -341,6 +341,11 @@ class NearbyConnectionsTransport implements NearbyTransport {
     );
   }
 
+  @override
+  Future<void> sendProfileUpdate({String? name, String? avatar}) async {
+    // NearbyConnections P2P profile broadcast
+  }
+
   Future<void> _sendEncryptedMessage(ChatMessage message) async {
     final session = await _sessionFor(message.endpointId);
     if (!session.isReady) {

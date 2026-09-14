@@ -128,4 +128,81 @@ void main() {
     expect(editReceivedByB!.newText, '¡Mensaje editado con éxito!');
     expect(editReceivedByB.targetMessageId, 'test-msg-1');
   });
+
+  test('peer updates profile and notifies connected peers', () async {
+    final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final port = server.port;
+    final clients = <String, Socket>{};
+
+    server.listen((Socket socket) {
+      String? clientId;
+      socket
+          .cast<List<int>>()
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+        if (line.trim().isEmpty) return;
+        final msg = jsonDecode(line) as Map<String, dynamic>;
+        final action = msg['action'] as String?;
+
+        if (action == 'register') {
+          clientId = msg['endpointId'] as String;
+          final name = msg['name'] as String;
+          clients[clientId!] = socket;
+
+          for (final entry in clients.entries) {
+            if (entry.key != clientId) {
+              socket.write('${jsonEncode({
+                    'action': 'peer_found',
+                    'endpointId': entry.key,
+                    'name': 'Peer ${entry.key}',
+                  })}\n');
+              entry.value.write('${jsonEncode({
+                    'action': 'peer_found',
+                    'endpointId': clientId,
+                    'name': name,
+                  })}\n');
+            }
+          }
+        } else if (action == 'update_profile') {
+          for (final entry in clients.entries) {
+            if (entry.key != clientId) {
+              entry.value.write('${jsonEncode({
+                    'action': 'peer_updated',
+                    'endpointId': clientId,
+                    'name': msg['name'],
+                    'avatar': msg['avatar'],
+                  })}\n');
+            }
+          }
+        }
+      });
+    });
+
+    final peerA = LanSocketTransport(customHost: '127.0.0.1', port: port);
+    final peerB = LanSocketTransport(customHost: '127.0.0.1', port: port);
+
+    final eventsB = <NearbyEvent>[];
+    final subB = peerB.events.listen(eventsB.add);
+
+    addTearDown(() async {
+      await subB.cancel();
+      await peerA.dispose();
+      await peerB.dispose();
+      await server.close();
+    });
+
+    await peerA.start('Alpha');
+    await peerB.start('Beta');
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    // A actualiza su avatar a un preset
+    await peerA.sendProfileUpdate(avatar: 'preset:🚀', name: 'Alpha Actualizado');
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    final updatedEvent = eventsB.whereType<PeerUpdated>().firstOrNull;
+    expect(updatedEvent, isNotNull);
+    expect(updatedEvent!.avatar, 'preset:🚀');
+    expect(updatedEvent.name, 'Alpha Actualizado');
+  });
 }

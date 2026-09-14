@@ -34,6 +34,8 @@ abstract interface class NearbyTransport {
 
   Future<void> sendReadReceipt(String endpointId, String messageId);
 
+  Future<void> sendProfileUpdate({String? name, String? avatar});
+
   Future<void> dispose();
 }
 

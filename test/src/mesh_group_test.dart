@@ -155,6 +155,9 @@ class _MockMeshTransport implements NearbyTransport {
   Future<void> sendReadReceipt(String endpointId, String messageId) async {}
 
   @override
+  Future<void> sendProfileUpdate({String? name, String? avatar}) async {}
+
+  @override
   Future<void> start(String displayName) async {}
 
   @override

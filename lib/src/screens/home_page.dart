@@ -1253,123 +1253,126 @@ void _showProfileSheet(BuildContext context, ChatController controller) {
     ),
     builder: (ctx) {
       final colors = Theme.of(context).colorScheme;
-      return SafeArea(
-        child: Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-            left: 20,
-            right: 20,
-            top: 16,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Mi Perfil',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Center(
-                  child: Stack(
-                    alignment: Alignment.bottomRight,
+      return AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) => SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+              left: 20,
+              right: 20,
+              top: 16,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      UserAvatarWidget(
-                        avatarBase64: controller.localAvatar,
-                        name: controller.displayName,
-                        radius: 46,
-                        onTap: () {
-                          _showAvatarSelectionSheet(context, controller);
-                        },
+                      Text(
+                        'Mi Perfil',
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
                       ),
-                      GestureDetector(
-                        onTap: () {
-                          _showAvatarSelectionSheet(context, controller);
-                        },
-                        child: CircleAvatar(
-                          radius: 16,
-                          backgroundColor: colors.primary,
-                          child: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
-                        ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(ctx),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 20),
-                Card(
-                  elevation: 0,
-                  color: colors.surfaceContainerLow,
-                  child: ListTile(
-                    leading: const Icon(Icons.person_outline),
-                    title: const Text('Nombre', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                    subtitle: Text(
-                      controller.displayName,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.edit_outlined, size: 20),
-                      onPressed: () {
-                        _showEditNameDialog(context, controller);
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Card(
-                  elevation: 0,
-                  color: colors.surfaceContainerLow,
-                  child: ListTile(
-                    leading: const Icon(Icons.info_outline),
-                    title: const Text('Info. actual', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                    subtitle: Text(
-                      controller.statusMessage,
-                      style: const TextStyle(fontSize: 15),
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.edit_outlined, size: 20),
-                      onPressed: () {
-                        _showEditStatusDialog(context, controller);
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Card(
-                  elevation: 0,
-                  color: colors.surfaceContainerLow,
-                  child: ListTile(
-                    leading: const Icon(Icons.verified_user_outlined, color: Colors.teal),
-                    title: const Text('Identidad Criptográfica', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(height: 16),
+                  Center(
+                    child: Stack(
+                      alignment: Alignment.bottomRight,
                       children: [
-                        Text(
-                          controller.localUniqueId,
-                          style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                        UserAvatarWidget(
+                          avatarBase64: controller.localAvatar,
+                          name: controller.displayName,
+                          radius: 46,
+                          onTap: () {
+                            _showAvatarSelectionSheet(context, controller);
+                          },
                         ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Anti-suplantación TOFU activa. Protege tus chats con cifrado ECDH E2E.',
-                          style: TextStyle(fontSize: 11, color: Colors.grey),
+                        GestureDetector(
+                          onTap: () {
+                            _showAvatarSelectionSheet(context, controller);
+                          },
+                          child: CircleAvatar(
+                            radius: 16,
+                            backgroundColor: colors.primary,
+                            child: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                const TotpPinWidget(compact: false),
-              ],
+                  const SizedBox(height: 20),
+                  Card(
+                    elevation: 0,
+                    color: colors.surfaceContainerLow,
+                    child: ListTile(
+                      leading: const Icon(Icons.person_outline),
+                      title: const Text('Nombre', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      subtitle: Text(
+                        controller.displayName,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.edit_outlined, size: 20),
+                        onPressed: () {
+                          _showEditNameDialog(context, controller);
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Card(
+                    elevation: 0,
+                    color: colors.surfaceContainerLow,
+                    child: ListTile(
+                      leading: const Icon(Icons.info_outline),
+                      title: const Text('Info. actual', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      subtitle: Text(
+                        controller.statusMessage,
+                        style: const TextStyle(fontSize: 15),
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.edit_outlined, size: 20),
+                        onPressed: () {
+                          _showEditStatusDialog(context, controller);
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Card(
+                    elevation: 0,
+                    color: colors.surfaceContainerLow,
+                    child: ListTile(
+                      leading: const Icon(Icons.verified_user_outlined, color: Colors.teal),
+                      title: const Text('Identidad Criptográfica', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            controller.localUniqueId,
+                            style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Anti-suplantación TOFU activa. Protege tus chats con cifrado ECDH E2E.',
+                            style: TextStyle(fontSize: 11, color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const TotpPinWidget(compact: false),
+                ],
+              ),
             ),
           ),
         ),
