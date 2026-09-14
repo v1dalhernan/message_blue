@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:message_blue/src/core/identity/user_identity_service.dart';
-import 'package:message_blue/src/core/iot/enterprise_mesh_policy.dart';
 import 'package:message_blue/src/core/iot/iot_device_node.dart';
 import 'package:message_blue/src/core/profile/user_profile_service.dart';
 import 'package:message_blue/src/core/storage/offline_mailbox_service.dart';
@@ -12,16 +11,42 @@ void main() {
       UserIdentityService.instance.reset();
     });
 
-    test('generates unique cryptographic id and deterministic 6-digit pin', () async {
+    test('generates unique cryptographic id and 6-digit pin', () async {
       final id1 = await UserIdentityService.instance.getUniqueId('Alice');
       final pin1 = UserIdentityService.instance.getPersonalPin('Alice');
       expect(id1.startsWith('BM-'), isTrue);
       expect(pin1.length, 6);
       expect(int.tryParse(pin1), isNotNull);
 
-      // Deterministic for same name
+      // Same step produces same PIN
       final pinAgain = UserIdentityService.instance.getPersonalPin('Alice');
       expect(pinAgain, pin1);
+    });
+
+    test('2FA rolling code rotates across 30-second windows and validates with grace tolerance', () {
+      final service = UserIdentityService.instance;
+      service.setDeviceSecret('secret-device-alpha');
+
+      final timeT0 = DateTime.fromMillisecondsSinceEpoch(1700000000000);
+      final pinT0 = service.getCurrentPin(timeT0);
+      expect(pinT0.length, 6);
+
+      // 30 seconds later (T1) -> new code
+      final timeT1 = timeT0.add(const Duration(seconds: 30));
+      final pinT1 = service.getCurrentPin(timeT1);
+      expect(pinT1.length, 6);
+      expect(pinT1, isNot(equals(pinT0)));
+
+      // Different device secret produces completely different PIN even at the exact same second
+      service.setDeviceSecret('secret-device-beta');
+      final pinBeta = service.getCurrentPin(timeT0);
+      expect(pinBeta, isNot(equals(pinT0)));
+
+      // Validation logic: current window PIN is valid
+      final nowPin = service.getCurrentPin();
+      expect(service.isValidPin(nowPin), isTrue);
+      expect(service.isValidPin('99999999'), isFalse);
+      expect(service.isValidPin('000000'), isFalse);
     });
 
     test('detects spoofing when an attacker uses an already registered name with different fingerprint', () {
@@ -95,7 +120,7 @@ void main() {
     });
   });
 
-  group('IoT Telemetry & Enterprise Policy', () {
+  group('IoT Telemetry', () {
     test('serializes and deserializes IoT telemetry packets', () {
       final packet = IotTelemetryPacket(
         nodeId: 'iot_temp_sensor_01',
@@ -116,18 +141,6 @@ void main() {
       expect(reconstructed.nodeId, packet.nodeId);
       expect(reconstructed.metricValue, 23.5);
       expect(reconstructed.unit, '°C');
-    });
-
-    test('EnterpriseMeshPolicy controls user disconnect capability', () {
-      final policy = EnterpriseMeshPolicy.instance;
-      expect(policy.allowUserDisconnect, isTrue);
-
-      policy.setLockDisconnect(true);
-      expect(policy.allowUserDisconnect, isFalse);
-      expect(policy.enforceAlwaysConnected, isTrue);
-
-      policy.setLockDisconnect(false);
-      expect(policy.allowUserDisconnect, isTrue);
     });
   });
 }

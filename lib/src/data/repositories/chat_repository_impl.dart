@@ -225,6 +225,12 @@ class ChatRepositoryImpl implements ChatRepository {
         ):
         _processIncomingEdit(endpointId, targetMessageId, newText, editedAt);
 
+      case MessageReadReceipt(
+          :final endpointId,
+          :final messageId,
+        ):
+        _processIncomingReadReceipt(endpointId, messageId);
+
       case NearbyFailure(:final message):
         debugPrint('NearbyFailure: $message');
     }
@@ -471,6 +477,19 @@ class ChatRepositoryImpl implements ChatRepository {
         text: newText,
         isEdited: true,
         editedAt: editedAt,
+      );
+      _notifyMessages();
+    }
+  }
+
+  void _processIncomingReadReceipt(
+    String endpointId,
+    String targetMessageId,
+  ) {
+    final idx = _messages.indexWhere((m) => m.id == targetMessageId);
+    if (idx != -1) {
+      _messages[idx] = _messages[idx].copyWith(
+        status: MessageDeliveryStatus.read,
       );
       _notifyMessages();
     }

@@ -226,6 +226,15 @@ class NearbyConnectionsTransport implements NearbyTransport {
         );
         return;
       }
+      if (jsonPayload is Map<String, dynamic> && jsonPayload['type'] == 'read_receipt') {
+        _events.add(
+          MessageReadReceipt(
+            endpointId: endpointId,
+            messageId: jsonPayload['messageId'] as String,
+          ),
+        );
+        return;
+      }
       final message = ChatMessage.fromPayload(
         endpointId: endpointId,
         bytes: clearText,
@@ -311,6 +320,21 @@ class NearbyConnectionsTransport implements NearbyTransport {
       editedAt: DateTime.now(),
     );
     final encrypted = await session.encrypt(edit.toPayload());
+    await _nearby.sendBytesPayload(
+      endpointId,
+      Uint8List.fromList(encrypted),
+    );
+  }
+
+  @override
+  Future<void> sendReadReceipt(String endpointId, String messageId) async {
+    final session = await _sessionFor(endpointId);
+    if (!session.isReady) return;
+    final payload = jsonEncode({
+      'type': 'read_receipt',
+      'messageId': messageId,
+    });
+    final encrypted = await session.encrypt(utf8.encode(payload));
     await _nearby.sendBytesPayload(
       endpointId,
       Uint8List.fromList(encrypted),

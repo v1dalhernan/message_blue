@@ -119,6 +119,9 @@ class FakeNearbyTransport implements NearbyTransport {
   Future<void> sendMessage(ChatMessage message) async {}
 
   @override
+  Future<void> sendReadReceipt(String endpointId, String messageId) async {}
+
+  @override
   Future<void> sendEdit({
     required String endpointId,
     required String targetMessageId,

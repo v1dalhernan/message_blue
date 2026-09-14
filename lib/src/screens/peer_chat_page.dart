@@ -30,8 +30,15 @@ class _PeerChatPageState extends State<PeerChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
-
   ChatMessage? _editingMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.controller.markChatAsRead(widget.endpointId);
+    });
+  }
 
   @override
   void dispose() {
@@ -155,6 +162,12 @@ class _PeerChatPageState extends State<PeerChatPage> {
         final peer = widget.controller.peerById(widget.endpointId);
         final messages = widget.controller.messagesFor(widget.endpointId);
         final isConnected = peer?.isConnected ?? false;
+
+        if (widget.controller.getUnreadCount(widget.endpointId) > 0) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) widget.controller.markChatAsRead(widget.endpointId);
+          });
+        }
 
         return Scaffold(
           appBar: AppBar(
@@ -349,13 +362,16 @@ class _MessageBubble extends StatelessWidget {
                         MessageDelivery.inMailbox => Icons.schedule_send,
                         MessageDelivery.sent => Icons.done,
                         MessageDelivery.delivered => Icons.done_all,
+                        MessageDelivery.read => Icons.done_all,
                         MessageDelivery.failed => Icons.error_outline,
                       },
                       size: 15,
                       color: switch (message.delivery) {
-                        MessageDelivery.delivered => const Color(0xFF53BDEB),
-                        MessageDelivery.sent => const Color(0xFF53BDEB),
+                        MessageDelivery.read => const Color(0xFF53BDEB),
+                        MessageDelivery.delivered => timeColor,
+                        MessageDelivery.sent => timeColor,
                         MessageDelivery.inMailbox => const Color(0xFFFFA000),
+                        MessageDelivery.failed => Colors.red,
                         _ => timeColor,
                       },
                     ),

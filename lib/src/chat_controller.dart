@@ -23,6 +23,10 @@ class ChatController extends ChangeNotifier {
   final Map<String, NearbyPeer> _peers = {};
   final Map<String, List<ChatMessage>> _messages = {};
   final Set<String> _seenMessageIds = {};
+  final StreamController<ChatMessage> _incomingMessageNotifications =
+      StreamController<ChatMessage>.broadcast();
+  final StreamController<String> _peerConnectionNotifications =
+      StreamController<String>.broadcast();
 
   bool _isRunning = false;
   bool _isBusy = false;
@@ -33,11 +37,17 @@ class ChatController extends ChangeNotifier {
   bool get isDemo => _transport.isDemo;
   bool get isRunning => _isRunning;
   bool get isBusy => _isBusy;
-  String get displayName => _displayName;
+  String get displayName => _displayName.isNotEmpty ? _displayName : UserProfileService.instance.displayName;
+  String get statusMessage => UserProfileService.instance.statusMessage;
   String? get errorMessage => _errorMessage;
 
+  Stream<ChatMessage> get incomingMessageNotifications =>
+      _incomingMessageNotifications.stream;
+  Stream<String> get peerConnectionNotifications =>
+      _peerConnectionNotifications.stream;
+
   String get localUniqueId => UserIdentityService.instance.fingerprint;
-  String get personalPin => UserIdentityService.instance.getPersonalPin(_displayName);
+  String get personalPin => UserIdentityService.instance.getPersonalPin(displayName);
   String? get localAvatar => UserProfileService.instance.localAvatarBase64;
   int get offlineMailboxCount => OfflineMailboxService.instance.pendingCount;
 
@@ -62,6 +72,16 @@ class ChatController extends ChangeNotifier {
 
   List<ChatMessage> messagesFor(String endpointId) =>
       List.unmodifiable(_messages[endpointId] ?? const []);
+
+  int getUnreadCount(String endpointId) {
+    final list = _messages[endpointId];
+    if (list == null) return 0;
+    return list
+        .where((m) =>
+            m.direction == MessageDirection.incoming &&
+            m.delivery != MessageDelivery.read)
+        .length;
+  }
 
   UserProfileService get userProfileService => UserProfileService.instance;
 
@@ -98,6 +118,46 @@ class ChatController extends ChangeNotifier {
   void setPresetAvatar(String preset) {
     UserProfileService.instance.setPresetAvatar(preset);
     notifyListeners();
+  }
+
+  void updateDisplayName(String newName) {
+    final trimmed = newName.trim();
+    if (trimmed.isNotEmpty) {
+      _displayName = trimmed;
+      UserProfileService.instance.setDisplayName(trimmed);
+      notifyListeners();
+    }
+  }
+
+  void updateStatusMessage(String newStatus) {
+    final trimmed = newStatus.trim();
+    if (trimmed.isNotEmpty) {
+      UserProfileService.instance.setStatusMessage(trimmed);
+      notifyListeners();
+    }
+  }
+
+  Future<void> markChatAsRead(String peerEndpointId) async {
+    final list = _messages[peerEndpointId];
+    if (list == null || list.isEmpty) return;
+
+    bool updated = false;
+    for (int i = 0; i < list.length; i++) {
+      final msg = list[i];
+      if (msg.direction == MessageDirection.incoming &&
+          msg.delivery != MessageDelivery.read) {
+        list[i] = msg.copyWith(delivery: MessageDelivery.read);
+        updated = true;
+        unawaited(
+          _transport.sendReadReceipt(peerEndpointId, msg.id).catchError((e) {
+            debugPrint('Error enviando confirmacion de lectura: $e');
+          }),
+        );
+      }
+    }
+    if (updated) {
+      notifyListeners();
+    }
   }
 
   Future<void> stop() async {
@@ -554,10 +614,16 @@ class ChatController extends ChangeNotifier {
           shouldNotify: false,
         );
         _flushMailboxForPeer(event.endpointId);
+        final p = _peers[event.endpointId];
+        if (p != null) {
+          _peerConnectionNotifications.add(p.name);
+        }
       case MessageReceived():
         unawaited(_processIncomingMessage(event.message));
       case MessageEdited():
         _processIncomingEdit(event);
+      case MessageReadReceipt():
+        _processIncomingReadReceipt(event);
       case NearbyFailure():
         _errorMessage = event.message;
     }
@@ -638,7 +704,19 @@ class ChatController extends ChangeNotifier {
     }
 
     _messages.putIfAbsent(message.endpointId, () => []).add(message);
+    _incomingMessageNotifications.add(message);
     notifyListeners();
+  }
+
+  void _processIncomingReadReceipt(MessageReadReceipt event) {
+    final list = _messages[event.endpointId];
+    if (list != null) {
+      final index = list.indexWhere((m) => m.id == event.messageId);
+      if (index >= 0) {
+        list[index] = list[index].copyWith(delivery: MessageDelivery.read);
+        notifyListeners();
+      }
+    }
   }
 
   void _processIncomingEdit(MessageEdited event) {
@@ -705,6 +783,8 @@ class ChatController extends ChangeNotifier {
   void dispose() {
     unawaited(_subscription.cancel());
     unawaited(_transport.dispose());
+    unawaited(_incomingMessageNotifications.close());
+    unawaited(_peerConnectionNotifications.close());
     super.dispose();
   }
 }

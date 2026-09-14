@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,11 +8,15 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../chat_controller.dart';
-import '../core/iot/enterprise_mesh_policy.dart';
+import '../core/profile/user_profile_service.dart';
+import '../models/chat_message.dart';
 import '../models/nearby_peer.dart';
 import '../nearby/nearby_transport.dart';
 import 'mesh_group_chat_page.dart';
 import 'peer_chat_page.dart';
+import 'widgets/totp_pin_widget.dart';
+
+const bool kEnterpriseMode = bool.fromEnvironment('ENTERPRISE', defaultValue: false);
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key, required this.transport});
@@ -25,16 +30,110 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   late final ChatController _controller;
   late final TextEditingController _nameController;
+  StreamSubscription<ChatMessage>? _msgSub;
+  StreamSubscription<String>? _peerConnSub;
 
   @override
   void initState() {
     super.initState();
     _controller = ChatController(widget.transport);
     _nameController = TextEditingController(text: 'Android cercano');
+    _initProfile();
+
+    _msgSub = _controller.incomingMessageNotifications.listen((msg) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          content: Row(
+            children: [
+              UserAvatarWidget(
+                avatarBase64: msg.authorAvatar ??
+                    _controller.userProfileService.getPeerAvatar(msg.endpointId),
+                name: msg.author,
+                radius: 18,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      msg.author,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      msg.type == ChatMessageType.text
+                          ? msg.text
+                          : (msg.type == ChatMessageType.image
+                              ? '📷 Foto'
+                              : '🎤 Nota de voz'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          action: SnackBarAction(
+            label: 'Abrir',
+            textColor: Colors.amberAccent,
+            onPressed: () {
+              final peer = _controller.peerById(msg.endpointId);
+              if (peer != null && mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PeerChatPage(
+                      controller: _controller,
+                      endpointId: peer.id,
+                    ),
+                  ),
+                );
+              }
+            },
+          ),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    });
+
+    _peerConnSub = _controller.peerConnectionNotifications.listen((name) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_outline, color: Colors.greenAccent),
+              const SizedBox(width: 10),
+              Expanded(child: Text('$name se ha conectado a tu red local.')),
+            ],
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    });
+  }
+
+  Future<void> _initProfile() async {
+    await UserProfileService.instance.loadProfile();
+    final savedName = UserProfileService.instance.displayName;
+    if (savedName.isNotEmpty && savedName != 'Android cercano' && mounted) {
+      _nameController.text = savedName;
+    }
   }
 
   @override
   void dispose() {
+    _msgSub?.cancel();
+    _peerConnSub?.cancel();
     _nameController.dispose();
     _controller.dispose();
     super.dispose();
@@ -56,13 +155,19 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
             actions: [
-              if (_controller.isRunning &&
-                  EnterpriseMeshPolicy.instance.allowUserDisconnect)
+              if (_controller.isRunning) ...[
                 IconButton(
-                  tooltip: 'Salir de la red local',
-                  onPressed: _controller.isBusy ? null : _controller.stop,
-                  icon: const Icon(Icons.power_settings_new),
+                  tooltip: 'Mi Perfil',
+                  onPressed: () => _showProfileSheet(context, _controller),
+                  icon: const Icon(Icons.account_circle_outlined),
                 ),
+                if (!kEnterpriseMode)
+                  IconButton(
+                    tooltip: 'Salir de la red local',
+                    onPressed: _controller.isBusy ? null : _controller.stop,
+                    icon: const Icon(Icons.power_settings_new),
+                  ),
+              ],
               const SizedBox(width: 8),
             ],
           ),
@@ -294,33 +399,13 @@ class _NetworkBody extends StatelessWidget {
               const SizedBox(height: 12),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
                   color: colors.surface.withAlpha(200),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: colors.outlineVariant.withAlpha(100)),
                 ),
-                child: Row(
-                  children: [
-                    Icon(Icons.pin, size: 20, color: colors.primary),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Tu código para conectar: ',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                    ),
-                    SelectableText(
-                      controller.personalPin.length >= 6
-                          ? '${controller.personalPin.substring(0, 3)} ${controller.personalPin.substring(3)}'
-                          : controller.personalPin,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 2,
-                        color: colors.primary,
-                      ),
-                    ),
-                  ],
-                ),
+                child: const TotpPinWidget(compact: true),
               ),
               if (controller.offlineMailboxCount > 0) ...[
                 const SizedBox(height: 8),
@@ -393,6 +478,7 @@ class _PeerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final unreadCount = controller.getUnreadCount(peer.id);
 
     return Card(
       color: colors.surface,
@@ -435,6 +521,24 @@ class _PeerCard extends StatelessWidget {
                               child: Text(
                                 peer.uniqueId!,
                                 style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                          if (unreadCount > 0) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF25D366),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '$unreadCount',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
                           ],
@@ -574,7 +678,11 @@ class _PeerCard extends StatelessWidget {
                         );
                       },
                       icon: const Icon(Icons.chat_bubble_outline),
-                      label: const Text('Abrir chat'),
+                      label: Text(
+                        unreadCount > 0
+                            ? 'Abrir chat ($unreadCount)'
+                            : 'Abrir chat',
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -957,10 +1065,15 @@ void _showPinConnectionDialog(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Ingresa el código de 6 dígitos que aparece en la pantalla de ${peer.name}:',
+            'Ingresa el código 2FA temporal que aparece en la pantalla de ${peer.name}:',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 4),
+          Text(
+            'El código rota cada 30s. Si recién cambió, el código previo aún es válido.',
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 14),
           TextField(
             controller: pinController,
             keyboardType: TextInputType.number,
@@ -1127,6 +1240,232 @@ Widget _avatarOptionButton(
           Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
         ],
       ),
+    ),
+  );
+}
+
+void _showProfileSheet(BuildContext context, ChatController controller) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (ctx) {
+      final colors = Theme.of(context).colorScheme;
+      return SafeArea(
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+            left: 20,
+            right: 20,
+            top: 16,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Mi Perfil',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Center(
+                  child: Stack(
+                    alignment: Alignment.bottomRight,
+                    children: [
+                      UserAvatarWidget(
+                        avatarBase64: controller.localAvatar,
+                        name: controller.displayName,
+                        radius: 46,
+                        onTap: () {
+                          _showAvatarSelectionSheet(context, controller);
+                        },
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          _showAvatarSelectionSheet(context, controller);
+                        },
+                        child: CircleAvatar(
+                          radius: 16,
+                          backgroundColor: colors.primary,
+                          child: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Card(
+                  elevation: 0,
+                  color: colors.surfaceContainerLow,
+                  child: ListTile(
+                    leading: const Icon(Icons.person_outline),
+                    title: const Text('Nombre', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    subtitle: Text(
+                      controller.displayName,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 20),
+                      onPressed: () {
+                        _showEditNameDialog(context, controller);
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Card(
+                  elevation: 0,
+                  color: colors.surfaceContainerLow,
+                  child: ListTile(
+                    leading: const Icon(Icons.info_outline),
+                    title: const Text('Info. actual', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    subtitle: Text(
+                      controller.statusMessage,
+                      style: const TextStyle(fontSize: 15),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 20),
+                      onPressed: () {
+                        _showEditStatusDialog(context, controller);
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Card(
+                  elevation: 0,
+                  color: colors.surfaceContainerLow,
+                  child: ListTile(
+                    leading: const Icon(Icons.verified_user_outlined, color: Colors.teal),
+                    title: const Text('Identidad Criptográfica', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          controller.localUniqueId,
+                          style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Anti-suplantación TOFU activa. Protege tus chats con cifrado ECDH E2E.',
+                          style: TextStyle(fontSize: 11, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const TotpPinWidget(compact: false),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+void _showEditNameDialog(BuildContext context, ChatController controller) {
+  final nameCtrl = TextEditingController(text: controller.displayName);
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Editar nombre'),
+      content: TextField(
+        controller: nameCtrl,
+        maxLength: 24,
+        autofocus: true,
+        decoration: const InputDecoration(
+          labelText: 'Tu nombre en BlueMesh',
+          counterText: '',
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+        FilledButton(
+          onPressed: () {
+            final newName = nameCtrl.text.trim();
+            if (newName.isNotEmpty) {
+              controller.updateDisplayName(newName);
+            }
+            Navigator.pop(ctx);
+          },
+          child: const Text('Guardar'),
+        ),
+      ],
+    ),
+  );
+}
+
+void _showEditStatusDialog(BuildContext context, ChatController controller) {
+  final statusCtrl = TextEditingController(text: controller.statusMessage);
+  final suggestions = [
+    '¡Hola! Estoy usando BlueMesh.',
+    'Disponible',
+    'En una reunión',
+    'En el trabajo',
+    'Solo mensajes importantes',
+  ];
+
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Editar info'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: statusCtrl,
+            maxLength: 60,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Estado o bio',
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text('Sugerencias:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: suggestions.map((s) {
+              return ActionChip(
+                label: Text(s, style: const TextStyle(fontSize: 12)),
+                onPressed: () {
+                  statusCtrl.text = s;
+                },
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+        FilledButton(
+          onPressed: () {
+            final newStatus = statusCtrl.text.trim();
+            if (newStatus.isNotEmpty) {
+              controller.updateStatusMessage(newStatus);
+            }
+            Navigator.pop(ctx);
+          },
+          child: const Text('Guardar'),
+        ),
+      ],
     ),
   );
 }

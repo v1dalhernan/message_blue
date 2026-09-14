@@ -78,6 +78,16 @@ class MessageEdited extends NearbyEvent {
   final DateTime editedAt;
 }
 
+class MessageReadReceipt extends NearbyEvent {
+  const MessageReadReceipt({
+    required this.endpointId,
+    required this.messageId,
+  });
+
+  final String endpointId;
+  final String messageId;
+}
+
 class NearbyFailure extends NearbyEvent {
   const NearbyFailure(this.message);
 

@@ -2,7 +2,7 @@ import 'dart:convert';
 
 enum MessageDirection { incoming, outgoing }
 
-enum MessageDelivery { sending, inMailbox, sent, delivered, failed }
+enum MessageDelivery { sending, inMailbox, sent, delivered, read, failed }
 
 enum ChatMessageType { text, image, audio }
 

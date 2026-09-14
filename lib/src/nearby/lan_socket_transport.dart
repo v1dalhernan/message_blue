@@ -26,7 +26,6 @@ class LanSocketTransport implements NearbyTransport {
 
   Socket? _socket;
   String _localId = '';
-  String _localDisplayName = '';
   bool _running = false;
   StreamSubscription<String>? _socketSub;
 
@@ -51,7 +50,6 @@ class LanSocketTransport implements NearbyTransport {
   Future<void> start(String displayName) async {
     if (_running) return;
     _localId = 'lan-${DateTime.now().microsecondsSinceEpoch % 1000000}';
-    _localDisplayName = displayName;
 
     try {
       _socket = await Socket.connect(_targetHost, port,
@@ -140,9 +138,8 @@ class LanSocketTransport implements NearbyTransport {
           final enteredCode = msg['enteredCode'] as String?;
           _peerNames[from] = fromName;
 
-          final myPin = UserIdentityService.instance.getPersonalPin(_localDisplayName);
-          // Si el solicitante escribió el código exacto de este usuario, conectar de inmediato
-          if (enteredCode != null && enteredCode.trim() == myPin.trim()) {
+          // Si el solicitante escribió el código 2FA dinámico de este usuario, conectar de inmediato
+          if (enteredCode != null && UserIdentityService.instance.isValidPin(enteredCode.trim())) {
             _sendFrame({
               'action': 'connect_response',
               'from': _localId,
@@ -234,6 +231,16 @@ class LanSocketTransport implements NearbyTransport {
             targetMessageId: edit.targetId,
             newText: edit.text,
             editedAt: edit.editedAt,
+          ),
+        );
+        return;
+      }
+
+      if (jsonPayload is Map<String, dynamic> && jsonPayload['type'] == 'read_receipt') {
+        _events.add(
+          MessageReadReceipt(
+            endpointId: endpointId,
+            messageId: jsonPayload['messageId'] as String,
           ),
         );
         return;
@@ -370,6 +377,23 @@ class LanSocketTransport implements NearbyTransport {
       editedAt: DateTime.now(),
     );
     final encrypted = await session.encrypt(edit.toPayload());
+    _sendFrame({
+      'action': 'data',
+      'from': _localId,
+      'to': endpointId,
+      'bytes': base64Encode(encrypted),
+    });
+  }
+
+  @override
+  Future<void> sendReadReceipt(String endpointId, String messageId) async {
+    final session = await _sessionFor(endpointId);
+    if (!session.isReady) return;
+    final payload = jsonEncode({
+      'type': 'read_receipt',
+      'messageId': messageId,
+    });
+    final encrypted = await session.encrypt(utf8.encode(payload));
     _sendFrame({
       'action': 'data',
       'from': _localId,
