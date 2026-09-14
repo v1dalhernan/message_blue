@@ -40,7 +40,11 @@ class DemoNearbyTransport implements NearbyTransport {
   }
 
   @override
-  Future<void> requestConnection(String endpointId, String displayName) async {
+  Future<void> requestConnection(
+    String endpointId,
+    String displayName, {
+    String? enteredCode,
+  }) async {
     final name = _peerNames[endpointId];
     if (name == null) throw StateError('El par de demostración no existe.');
     await Future<void>.delayed(const Duration(milliseconds: 250));

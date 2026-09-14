@@ -16,6 +16,10 @@ class NearbyPeer {
     required this.status,
     this.authenticationToken,
     this.isIncoming = false,
+    this.uniqueId,
+    this.avatarBase64,
+    this.personalPin,
+    this.isSpoofed = false,
   });
 
   final String id;
@@ -23,6 +27,10 @@ class NearbyPeer {
   final PeerConnectionStatus status;
   final String? authenticationToken;
   final bool isIncoming;
+  final String? uniqueId;
+  final String? avatarBase64;
+  final String? personalPin;
+  final bool isSpoofed;
 
   bool get isConnected => status == PeerConnectionStatus.connected;
 
@@ -32,6 +40,10 @@ class NearbyPeer {
     String? authenticationToken,
     bool? isIncoming,
     bool clearAuthenticationToken = false,
+    String? uniqueId,
+    String? avatarBase64,
+    String? personalPin,
+    bool? isSpoofed,
   }) {
     return NearbyPeer(
       id: id,
@@ -41,6 +53,10 @@ class NearbyPeer {
           ? null
           : authenticationToken ?? this.authenticationToken,
       isIncoming: isIncoming ?? this.isIncoming,
+      uniqueId: uniqueId ?? this.uniqueId,
+      avatarBase64: avatarBase64 ?? this.avatarBase64,
+      personalPin: personalPin ?? this.personalPin,
+      isSpoofed: isSpoofed ?? this.isSpoofed,
     );
   }
 }

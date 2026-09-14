@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:cryptography/cryptography.dart';
 
+import '../core/identity/user_identity_service.dart';
+import '../core/profile/user_profile_service.dart';
 import '../models/chat_message.dart';
 import 'nearby_event.dart';
 import 'nearby_transport.dart';
@@ -24,6 +26,7 @@ class LanSocketTransport implements NearbyTransport {
 
   Socket? _socket;
   String _localId = '';
+  String _localDisplayName = '';
   bool _running = false;
   StreamSubscription<String>? _socketSub;
 
@@ -48,6 +51,7 @@ class LanSocketTransport implements NearbyTransport {
   Future<void> start(String displayName) async {
     if (_running) return;
     _localId = 'lan-${DateTime.now().microsecondsSinceEpoch % 1000000}';
+    _localDisplayName = displayName;
 
     try {
       _socket = await Socket.connect(_targetHost, port,
@@ -73,10 +77,17 @@ class LanSocketTransport implements NearbyTransport {
           },
         );
 
+    final uniqueId = await UserIdentityService.instance.getUniqueId(displayName);
+    final avatar = UserProfileService.instance.localAvatarBase64;
+    final pin = UserIdentityService.instance.getPersonalPin(displayName);
+
     _sendFrame({
       'action': 'register',
       'endpointId': _localId,
       'name': displayName,
+      'uniqueId': uniqueId,
+      'avatar': avatar,
+      'pin': pin,
     });
   }
 
@@ -90,8 +101,31 @@ class LanSocketTransport implements NearbyTransport {
         case 'peer_found':
           final id = msg['endpointId'] as String;
           final name = msg['name'] as String;
+          final uniqueId = msg['uniqueId'] as String?;
+          final avatar = msg['avatar'] as String?;
+          final pin = msg['pin'] as String?;
           _peerNames[id] = name;
-          _events.add(PeerFound(endpointId: id, name: name));
+
+          if (uniqueId != null) {
+            UserIdentityService.instance.verifyOrRegisterPeer(
+              endpointId: id,
+              peerName: name,
+              fingerprint: uniqueId,
+            );
+          }
+          if (avatar != null) {
+            UserProfileService.instance.setPeerAvatar(id, avatar);
+          }
+
+          _events.add(
+            PeerFound(
+              endpointId: id,
+              name: name,
+              uniqueId: uniqueId,
+              avatar: avatar,
+              pin: pin,
+            ),
+          );
 
         case 'peer_lost':
           final id = msg['endpointId'] as String;
@@ -102,16 +136,36 @@ class LanSocketTransport implements NearbyTransport {
         case 'connect_request':
           final from = msg['from'] as String;
           final fromName = msg['fromName'] as String;
-          final token = msg['token'] as String;
+          final token = msg['token'] as String? ?? '';
+          final enteredCode = msg['enteredCode'] as String?;
           _peerNames[from] = fromName;
-          _events.add(
-            ConnectionApprovalRequired(
-              endpointId: from,
-              name: fromName,
-              authenticationToken: token,
-              isIncoming: true,
-            ),
-          );
+
+          final myPin = UserIdentityService.instance.getPersonalPin(_localDisplayName);
+          // Si el solicitante escribió el código exacto de este usuario, conectar de inmediato
+          if (enteredCode != null && enteredCode.trim() == myPin.trim()) {
+            _sendFrame({
+              'action': 'connect_response',
+              'from': _localId,
+              'to': from,
+              'accepted': true,
+            });
+            _events.add(
+              ConnectionChanged(
+                endpointId: from,
+                outcome: ConnectionOutcome.connected,
+              ),
+            );
+            unawaited(_sendKeyExchange(from).catchError(_emitSecureError));
+          } else {
+            _events.add(
+              ConnectionApprovalRequired(
+                endpointId: from,
+                name: fromName,
+                authenticationToken: token,
+                isIncoming: true,
+              ),
+            );
+          }
 
         case 'connect_response':
           final from = msg['from'] as String;
@@ -206,8 +260,12 @@ class LanSocketTransport implements NearbyTransport {
   }
 
   @override
-  Future<void> requestConnection(String endpointId, String displayName) async {
-    final token =
+  Future<void> requestConnection(
+    String endpointId,
+    String displayName, {
+    String? enteredCode,
+  }) async {
+    final token = enteredCode ??
         '${(endpointId.hashCode.abs() % 900000 + 100000)}'; // Token visual de 6 dígitos
     _sendFrame({
       'action': 'connect_request',
@@ -215,6 +273,7 @@ class LanSocketTransport implements NearbyTransport {
       'fromName': displayName,
       'to': endpointId,
       'token': token,
+      'enteredCode': enteredCode,
     });
     _events.add(
       ConnectionApprovalRequired(

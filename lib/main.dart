@@ -48,7 +48,7 @@ class BlueMeshApp extends StatelessWidget {
     const demoMode = bool.fromEnvironment('DEMO_MODE');
     if (demoMode) return DemoNearbyTransport();
 
-    const lanMode = bool.fromEnvironment('LAN_MODE');
+    const lanMode = bool.fromEnvironment('LAN_MODE', defaultValue: true);
     if (lanMode || !Platform.isAndroid) return LanSocketTransport();
 
     return NearbyConnectionsTransport();

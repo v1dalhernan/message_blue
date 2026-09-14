@@ -133,7 +133,11 @@ class _MockMeshTransport implements NearbyTransport {
   Future<void> rejectConnection(String endpointId) async {}
 
   @override
-  Future<void> requestConnection(String endpointId, String displayName) async {}
+  Future<void> requestConnection(
+    String endpointId,
+    String displayName, {
+    String? enteredCode,
+  }) async {}
 
   @override
   Future<void> sendEdit({

@@ -5,6 +5,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'core/identity/user_identity_service.dart';
+import 'core/profile/user_profile_service.dart';
+import 'core/storage/offline_mailbox_service.dart';
 import 'models/chat_message.dart';
 import 'models/nearby_peer.dart';
 import 'nearby/nearby_event.dart';
@@ -33,6 +36,11 @@ class ChatController extends ChangeNotifier {
   String get displayName => _displayName;
   String? get errorMessage => _errorMessage;
 
+  String get localUniqueId => UserIdentityService.instance.fingerprint;
+  String get personalPin => UserIdentityService.instance.getPersonalPin(_displayName);
+  String? get localAvatar => UserProfileService.instance.localAvatarBase64;
+  int get offlineMailboxCount => OfflineMailboxService.instance.pendingCount;
+
   int get connectedCount => _peers.values.where((p) => p.isConnected).length;
 
   List<NearbyPeer> get connectedPeers =>
@@ -55,6 +63,8 @@ class ChatController extends ChangeNotifier {
   List<ChatMessage> messagesFor(String endpointId) =>
       List.unmodifiable(_messages[endpointId] ?? const []);
 
+  UserProfileService get userProfileService => UserProfileService.instance;
+
   Future<bool> start(String rawDisplayName) async {
     final name = rawDisplayName.trim();
     if (name.isEmpty) {
@@ -66,6 +76,7 @@ class ChatController extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
+      await UserIdentityService.instance.getUniqueId(name);
       await _transport.start(name);
       _displayName = name;
       _isRunning = true;
@@ -77,6 +88,16 @@ class ChatController extends ChangeNotifier {
       _isBusy = false;
       notifyListeners();
     }
+  }
+
+  Future<void> updateProfileAvatar(File imageFile) async {
+    await UserProfileService.instance.setAvatarFromFile(imageFile);
+    notifyListeners();
+  }
+
+  void setPresetAvatar(String preset) {
+    UserProfileService.instance.setPresetAvatar(preset);
+    notifyListeners();
   }
 
   Future<void> stop() async {
@@ -97,7 +118,7 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  Future<void> connect(String endpointId) async {
+  Future<void> connect(String endpointId, {String? enteredCode}) async {
     final peer = _peers[endpointId];
     if (peer == null) return;
 
@@ -105,7 +126,11 @@ class ChatController extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      await _transport.requestConnection(endpointId, _displayName);
+      await _transport.requestConnection(
+        endpointId,
+        _displayName,
+        enteredCode: enteredCode,
+      );
     } catch (error) {
       _peers[endpointId] = peer.copyWith(status: PeerConnectionStatus.failed);
       _setError(error.toString());
@@ -146,22 +171,34 @@ class ChatController extends ChangeNotifier {
 
   Future<bool> send(String endpointId, String rawText) async {
     final text = rawText.trim();
-    final peer = _peers[endpointId];
-    if (text.isEmpty || peer == null || !peer.isConnected) return false;
+    if (text.isEmpty) return false;
 
+    final peer = _peers[endpointId];
+    final isConnected = peer?.isConnected ?? false;
     final now = DateTime.now();
+
     var message = ChatMessage(
       id: '${now.microsecondsSinceEpoch}-${_displayName.hashCode}',
       endpointId: endpointId,
       author: _displayName,
+      authorAvatar: UserProfileService.instance.localAvatarBase64,
       text: text,
       sentAt: now,
       direction: MessageDirection.outgoing,
-      delivery: MessageDelivery.sending,
+      delivery: isConnected ? MessageDelivery.sending : MessageDelivery.inMailbox,
     );
     final messages = _messages.putIfAbsent(endpointId, () => []);
     messages.add(message);
     notifyListeners();
+
+    if (!isConnected) {
+      // Si el destinatario no está conectado, encolar en el buzón offline
+      OfflineMailboxService.instance.queueMessage(message, endpointId);
+      try {
+        await _transport.sendMessage(message);
+      } catch (_) {}
+      return true;
+    }
 
     try {
       await _transport.sendMessage(message);
@@ -169,10 +206,10 @@ class ChatController extends ChangeNotifier {
       _replaceMessage(endpointId, message);
       return true;
     } catch (error) {
-      message = message.copyWith(delivery: MessageDelivery.failed);
+      message = message.copyWith(delivery: MessageDelivery.inMailbox);
       _replaceMessage(endpointId, message);
-      _setError('No se pudo enviar el mensaje: $error');
-      return false;
+      OfflineMailboxService.instance.queueMessage(message, endpointId);
+      return true;
     }
   }
 
@@ -189,6 +226,7 @@ class ChatController extends ChangeNotifier {
       id: messageId,
       endpointId: ChatMessage.groupEndpointId,
       author: _displayName,
+      authorAvatar: UserProfileService.instance.localAvatarBase64,
       text: text,
       sentAt: now,
       direction: MessageDirection.outgoing,
@@ -228,6 +266,7 @@ class ChatController extends ChangeNotifier {
       id: '${now.microsecondsSinceEpoch}-${_displayName.hashCode}',
       endpointId: endpointId,
       author: _displayName,
+      authorAvatar: UserProfileService.instance.localAvatarBase64,
       text: caption,
       sentAt: now,
       direction: MessageDirection.outgoing,
@@ -267,6 +306,7 @@ class ChatController extends ChangeNotifier {
       id: messageId,
       endpointId: ChatMessage.groupEndpointId,
       author: _displayName,
+      authorAvatar: UserProfileService.instance.localAvatarBase64,
       text: caption,
       sentAt: now,
       direction: MessageDirection.outgoing,
@@ -309,6 +349,7 @@ class ChatController extends ChangeNotifier {
       id: '${now.microsecondsSinceEpoch}-${_displayName.hashCode}',
       endpointId: endpointId,
       author: _displayName,
+      authorAvatar: UserProfileService.instance.localAvatarBase64,
       text: 'Nota de voz (${durationSeconds}s)',
       sentAt: now,
       direction: MessageDirection.outgoing,
@@ -349,6 +390,7 @@ class ChatController extends ChangeNotifier {
       id: messageId,
       endpointId: ChatMessage.groupEndpointId,
       author: _displayName,
+      authorAvatar: UserProfileService.instance.localAvatarBase64,
       text: 'Nota de voz (${durationSeconds}s)',
       sentAt: now,
       direction: MessageDirection.outgoing,
@@ -455,12 +497,29 @@ class ChatController extends ChangeNotifier {
     switch (event) {
       case PeerFound():
         final existing = _peers[event.endpointId];
+        final isSpoofed = event.uniqueId != null
+            ? !UserIdentityService.instance.verifyOrRegisterPeer(
+                endpointId: event.endpointId,
+                peerName: event.name,
+                fingerprint: event.uniqueId!,
+              )
+            : false;
+        if (event.avatarBase64 != null) {
+          UserProfileService.instance.setPeerAvatar(
+            event.endpointId,
+            event.avatarBase64,
+          );
+        }
         _peers[event.endpointId] = NearbyPeer(
           id: event.endpointId,
           name: event.name,
           status: existing?.status ?? PeerConnectionStatus.discovered,
           authenticationToken: existing?.authenticationToken,
           isIncoming: existing?.isIncoming ?? false,
+          uniqueId: event.uniqueId ?? existing?.uniqueId,
+          avatarBase64: event.avatarBase64 ?? existing?.avatarBase64,
+          personalPin: event.personalPin ?? existing?.personalPin,
+          isSpoofed: isSpoofed,
         );
       case PeerLost():
         final peer = _peers[event.endpointId];
@@ -475,6 +534,10 @@ class ChatController extends ChangeNotifier {
           status: PeerConnectionStatus.awaitingApproval,
           authenticationToken: event.authenticationToken,
           isIncoming: event.isIncoming,
+          uniqueId: existing?.uniqueId,
+          avatarBase64: existing?.avatarBase64,
+          personalPin: existing?.personalPin,
+          isSpoofed: existing?.isSpoofed ?? false,
         );
       case ConnectionChanged():
         final status = switch (event.outcome) {
@@ -490,6 +553,7 @@ class ChatController extends ChangeNotifier {
           PeerConnectionStatus.connected,
           shouldNotify: false,
         );
+        _flushMailboxForPeer(event.endpointId);
       case MessageReceived():
         unawaited(_processIncomingMessage(event.message));
       case MessageEdited():
@@ -500,8 +564,38 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _flushMailboxForPeer(String endpointId) {
+    unawaited(
+      OfflineMailboxService.instance.flushPendingForPeer(
+        endpointId,
+        (message) async {
+          try {
+            await _transport.sendMessage(message);
+            final updated = message.copyWith(delivery: MessageDelivery.sent);
+            _replaceMessage(endpointId, updated);
+            return true;
+          } catch (e) {
+            debugPrint('Error enviando mensaje pendiente del buzón: $e');
+            return false;
+          }
+        },
+      ).then((sent) {
+        if (sent.isNotEmpty) {
+          notifyListeners();
+        }
+      }),
+    );
+  }
+
   Future<void> _processIncomingMessage(ChatMessage raw) async {
     var message = raw;
+    if (message.authorAvatar != null) {
+      UserProfileService.instance.setPeerAvatar(message.endpointId, message.authorAvatar);
+      final existing = _peers[message.endpointId];
+      if (existing != null && existing.avatarBase64 != message.authorAvatar) {
+        _peers[message.endpointId] = existing.copyWith(avatarBase64: message.authorAvatar);
+      }
+    }
     if (message.mediaBase64 != null && message.mediaPath == null) {
       try {
         final bytes = base64Decode(message.mediaBase64!);

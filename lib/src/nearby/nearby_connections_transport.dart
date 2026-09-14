@@ -121,7 +121,11 @@ class NearbyConnectionsTransport implements NearbyTransport {
   }
 
   @override
-  Future<void> requestConnection(String endpointId, String displayName) async {
+  Future<void> requestConnection(
+    String endpointId,
+    String displayName, {
+    String? enteredCode,
+  }) async {
     try {
       final requested = await _nearby.requestConnection(
         displayName,

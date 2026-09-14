@@ -7,8 +7,11 @@ import 'dart:io';
 /// Permite que dos o más emuladores de Android (o instancias de macOS/iOS)
 /// se descubran y comuniquen localmente en tu computadora sin hardware Bluetooth.
 ///
-/// Los mensajes van cifrados de extremo a extremo (E2E) con X25519 y AES-256-GCM;
-/// este hub solo reenvía los paquetes crudos entre endpoints.
+/// Soporta:
+/// 1. Registro con ID único criptográfico, avatar de perfil y PIN personal.
+/// 2. Verificación de código PIN introducido por el solicitante.
+/// 3. Buzón Store-and-Forward para mensajes a dispositivos fuera de línea.
+/// 4. Retransmisión transparente de paquetes E2EE y telemetría IoT.
 void main(List<String> args) {
   runZonedGuarded(() async {
     final port = int.tryParse(Platform.environment['PORT'] ?? '') ?? 8765;
@@ -20,6 +23,7 @@ void main(List<String> args) {
     print('====================================================');
 
     final clients = <String, _ConnectedClient>{};
+    final mailbox = <String, List<Map<String, dynamic>>>{}; // targetId -> list of frames
 
     server.listen((Socket socket) {
       _ConnectedClient? currentClient;
@@ -35,90 +39,121 @@ void main(List<String> args) {
           .transform(utf8.decoder)
           .transform(const LineSplitter())
           .listen(
-      (line) {
-        if (line.trim().isEmpty) return;
-        try {
-          final msg = jsonDecode(line) as Map<String, dynamic>;
-          final action = msg['action'] as String?;
+        (line) {
+          if (line.trim().isEmpty) return;
+          try {
+            final msg = jsonDecode(line) as Map<String, dynamic>;
+            final action = msg['action'] as String?;
 
-          switch (action) {
-            case 'register':
-              final id = msg['endpointId'] as String;
-              final name = msg['name'] as String;
-              currentClient = _ConnectedClient(id: id, name: name, socket: socket);
-              clients[id] = currentClient!;
-              print('🟢 Dispositivo registrado: $name ($id)');
+            switch (action) {
+              case 'register':
+                final id = msg['endpointId'] as String;
+                final name = msg['name'] as String;
+                final uniqueId = msg['uniqueId'] as String?;
+                final avatar = msg['avatar'] as String?;
+                final pin = msg['pin'] as String?;
 
-              // Notificar al nuevo cliente de los peers existentes
-              for (final peer in clients.values) {
-                if (peer.id != id) {
-                  currentClient!.send({
-                    'action': 'peer_found',
-                    'endpointId': peer.id,
-                    'name': peer.name,
-                  });
-                  // Notificar al peer existente del nuevo cliente
-                  peer.send({
-                    'action': 'peer_found',
-                    'endpointId': id,
-                    'name': name,
-                  });
+                currentClient = _ConnectedClient(
+                  id: id,
+                  name: name,
+                  socket: socket,
+                  uniqueId: uniqueId,
+                  avatar: avatar,
+                  pin: pin,
+                );
+                clients[id] = currentClient!;
+                print('🟢 Dispositivo registrado: $name ($id) [ID: $uniqueId, PIN: $pin]');
+
+                // Entregar mensajes pendientes del buzón offline si existen
+                if (mailbox.containsKey(id)) {
+                  final pendingList = mailbox[id]!;
+                  print('📬 Entregando ${pendingList.length} mensajes pendientes del buzón para $name ($id)');
+                  for (final pending in pendingList) {
+                    currentClient!.send(pending);
+                  }
+                  mailbox.remove(id);
                 }
-              }
 
-            case 'connect_request':
-              final to = msg['to'] as String;
-              final target = clients[to];
-              if (target != null) {
-                print('🤝 Solicitud de conexión de ${currentClient?.name} a ${target.name}');
-                target.send(msg);
-              }
+                // Notificar al nuevo cliente de los peers existentes
+                for (final peer in clients.values) {
+                  if (peer.id != id) {
+                    currentClient!.send({
+                      'action': 'peer_found',
+                      'endpointId': peer.id,
+                      'name': peer.name,
+                      'uniqueId': peer.uniqueId,
+                      'avatar': peer.avatar,
+                      'pin': peer.pin,
+                    });
+                    // Notificar al peer existente del nuevo cliente
+                    peer.send({
+                      'action': 'peer_found',
+                      'endpointId': id,
+                      'name': name,
+                      'uniqueId': uniqueId,
+                      'avatar': avatar,
+                      'pin': pin,
+                    });
+                  }
+                }
 
-            case 'connect_response':
-              final to = msg['to'] as String;
-              final target = clients[to];
-              if (target != null) {
-                print('✅ Respuesta de conexión de ${currentClient?.name} a ${target.name}');
-                target.send(msg);
-              }
+              case 'connect_request':
+                final to = msg['to'] as String;
+                final target = clients[to];
+                if (target != null) {
+                  print('🤝 Solicitud de conexión de ${currentClient?.name} a ${target.name} con código');
+                  target.send(msg);
+                }
 
-            case 'data':
-              final to = msg['to'] as String;
-              final target = clients[to];
-              if (target != null) {
-                target.send(msg);
-              }
+              case 'connect_response':
+                final to = msg['to'] as String;
+                final target = clients[to];
+                if (target != null) {
+                  print('✅ Respuesta de conexión de ${currentClient?.name} a ${target.name}');
+                  target.send(msg);
+                }
 
-            case 'disconnect':
-              final to = msg['to'] as String;
-              final target = clients[to];
-              if (target != null) {
-                target.send(msg);
-              }
+              case 'data':
+                final to = msg['to'] as String;
+                final target = clients[to];
+                if (target != null) {
+                  target.send(msg);
+                } else {
+                  // Destinatario offline: guardar en buzón Store-and-Forward
+                  print('📦 Destinatario $to offline. Guardando mensaje en buzón de la malla.');
+                  mailbox.putIfAbsent(to, () => []).add(msg);
+                }
+
+              case 'disconnect':
+                final to = msg['to'] as String;
+                final target = clients[to];
+                if (target != null) {
+                  target.send(msg);
+                }
+            }
+          } catch (e) {
+            print('⚠️ Error procesando frame: $e');
           }
-        } catch (e) {
-          print('⚠️ Error procesando frame: $e');
-        }
-      },
-      onDone: () {
-        if (currentClient != null) {
-          print('🔴 Desconectado: ${currentClient!.name} (${currentClient!.id})');
-          clients.remove(currentClient!.id);
-          for (final peer in clients.values) {
-            peer.send({
-              'action': 'peer_lost',
-              'endpointId': currentClient!.id,
-            });
+        },
+        onDone: () {
+          if (currentClient != null) {
+            print('🔴 Desconectado: ${currentClient!.name} (${currentClient!.id})');
+            clients.remove(currentClient!.id);
+            for (final peer in clients.values) {
+              peer.send({
+                'action': 'peer_lost',
+                'endpointId': currentClient!.id,
+              });
+            }
           }
-        }
-      },
-      onError: (e) {
-        if (currentClient != null) {
-          clients.remove(currentClient!.id);
-        }
-      },
-    );
-  });
+        },
+        onError: (e) {
+          if (currentClient != null) {
+            clients.remove(currentClient!.id);
+          }
+        },
+      );
+    });
   }, (error, stack) {
     print('ℹ️ Hub red resiliente: $error');
   });
@@ -129,11 +164,17 @@ class _ConnectedClient {
     required this.id,
     required this.name,
     required this.socket,
+    this.uniqueId,
+    this.avatar,
+    this.pin,
   });
 
   final String id;
   final String name;
   final Socket socket;
+  final String? uniqueId;
+  final String? avatar;
+  final String? pin;
 
   void send(Map<String, dynamic> data) {
     try {

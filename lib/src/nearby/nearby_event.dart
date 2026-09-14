@@ -5,10 +5,22 @@ sealed class NearbyEvent {
 }
 
 class PeerFound extends NearbyEvent {
-  const PeerFound({required this.endpointId, required this.name});
+  const PeerFound({
+    required this.endpointId,
+    required this.name,
+    this.uniqueId,
+    this.avatar,
+    this.pin,
+  });
 
   final String endpointId;
   final String name;
+  final String? uniqueId;
+  final String? avatar;
+  final String? pin;
+
+  String? get avatarBase64 => avatar;
+  String? get personalPin => pin;
 }
 
 class PeerLost extends NearbyEvent {

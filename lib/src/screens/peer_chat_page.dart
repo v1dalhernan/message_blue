@@ -158,13 +158,55 @@ class _PeerChatPageState extends State<PeerChatPage> {
 
         return Scaffold(
           appBar: AppBar(
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            titleSpacing: 0,
+            title: Row(
               children: [
-                Text(peer?.name ?? 'Dispositivo'),
-                Text(
-                  isConnected ? 'Cifrado E2E · AES-256-GCM' : 'Sin conexión',
-                  style: Theme.of(context).textTheme.bodySmall,
+                _PeerAvatar(
+                  avatarBase64: peer?.avatarBase64 ??
+                      widget.controller.userProfileService.getPeerAvatar(widget.endpointId),
+                  name: peer?.name ?? 'Dispositivo',
+                  radius: 18,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              peer?.name ?? 'Dispositivo',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (peer?.uniqueId != null) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                peer!.uniqueId!,
+                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      Text(
+                        isConnected
+                            ? 'Cifrado E2E · AES-256-GCM'
+                            : 'Fuera de línea · Buzón activo',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: isConnected ? Colors.green : Colors.amber.shade800,
+                              fontWeight: isConnected ? FontWeight.normal : FontWeight.w600,
+                            ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -190,7 +232,8 @@ class _PeerChatPageState extends State<PeerChatPage> {
                 ),
                 _Composer(
                   controller: _messageController,
-                  enabled: isConnected,
+                  enabled: true,
+                  isConnected: isConnected,
                   editingMessage: _editingMessage,
                   onCancelEdit: _cancelEditing,
                   onSend: _send,
@@ -256,13 +299,26 @@ class _MessageBubble extends StatelessWidget {
               if (!outgoing)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 3),
-                  child: Text(
-                    message.author,
-                    style: const TextStyle(
-                      color: Color(0xFF075E54),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12.5,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (message.authorAvatar != null) ...[
+                        _PeerAvatar(
+                          avatarBase64: message.authorAvatar,
+                          name: message.author,
+                          radius: 8,
+                        ),
+                        const SizedBox(width: 5),
+                      ],
+                      Text(
+                        message.author,
+                        style: const TextStyle(
+                          color: Color(0xFF075E54),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               _buildContent(context),
@@ -290,13 +346,18 @@ class _MessageBubble extends StatelessWidget {
                     Icon(
                       switch (message.delivery) {
                         MessageDelivery.sending => Icons.access_time,
-                        MessageDelivery.sent => Icons.done_all,
+                        MessageDelivery.inMailbox => Icons.schedule_send,
+                        MessageDelivery.sent => Icons.done,
+                        MessageDelivery.delivered => Icons.done_all,
                         MessageDelivery.failed => Icons.error_outline,
                       },
                       size: 15,
-                      color: message.delivery == MessageDelivery.sent
-                          ? const Color(0xFF53BDEB)
-                          : timeColor,
+                      color: switch (message.delivery) {
+                        MessageDelivery.delivered => const Color(0xFF53BDEB),
+                        MessageDelivery.sent => const Color(0xFF53BDEB),
+                        MessageDelivery.inMailbox => const Color(0xFFFFA000),
+                        _ => timeColor,
+                      },
                     ),
                   ],
                 ],
@@ -548,6 +609,7 @@ class _Composer extends StatefulWidget {
   const _Composer({
     required this.controller,
     required this.enabled,
+    required this.isConnected,
     required this.editingMessage,
     required this.onCancelEdit,
     required this.onSend,
@@ -559,6 +621,7 @@ class _Composer extends StatefulWidget {
 
   final TextEditingController controller;
   final bool enabled;
+  final bool isConnected;
   final ChatMessage? editingMessage;
   final VoidCallback onCancelEdit;
   final VoidCallback onSend;
@@ -730,12 +793,12 @@ class _ComposerState extends State<_Composer> {
                       IconButton(
                         tooltip: 'Adjuntar imagen',
                         icon: const Icon(Icons.photo_camera_outlined),
-                        onPressed: widget.enabled ? widget.onPickImage : null,
+                        onPressed: (widget.enabled && widget.isConnected) ? widget.onPickImage : null,
                       ),
                       IconButton(
                         tooltip: 'Grabar nota de voz',
                         icon: const Icon(Icons.mic_none_outlined),
-                        onPressed: widget.enabled ? _startRecording : null,
+                        onPressed: (widget.enabled && widget.isConnected) ? _startRecording : null,
                       ),
                       Expanded(
                         child: TextField(
@@ -746,11 +809,11 @@ class _ComposerState extends State<_Composer> {
                           maxLength: 1000,
                           textCapitalization: TextCapitalization.sentences,
                           decoration: InputDecoration(
-                            hintText: widget.enabled
-                                ? (widget.editingMessage != null
-                                    ? 'Edita tu mensaje...'
-                                    : 'Escribe un mensaje...')
-                                : 'Dispositivo desconectado',
+                            hintText: widget.editingMessage != null
+                                ? 'Edita tu mensaje...'
+                                : (widget.isConnected
+                                    ? 'Escribe un mensaje...'
+                                    : 'Escribe un mensaje (buzón offline)...'),
                             counterText: '',
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 14,
@@ -793,6 +856,50 @@ class _EmptyConversation extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PeerAvatar extends StatelessWidget {
+  const _PeerAvatar({
+    this.avatarBase64,
+    required this.name,
+    this.radius = 18,
+  });
+
+  final String? avatarBase64;
+  final String name;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    if (avatarBase64 != null && avatarBase64!.startsWith('preset:')) {
+      final emoji = avatarBase64!.replaceFirst('preset:', '');
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        child: Text(emoji, style: TextStyle(fontSize: radius * 1.1)),
+      );
+    } else if (avatarBase64 != null && avatarBase64!.isNotEmpty) {
+      try {
+        final bytes = base64Decode(avatarBase64!);
+        return CircleAvatar(
+          radius: radius,
+          backgroundImage: MemoryImage(bytes),
+        );
+      } catch (_) {}
+    }
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+      child: Text(
+        name.isNotEmpty ? name[0].toUpperCase() : '?',
+        style: TextStyle(
+          fontSize: radius * 0.9,
+          fontWeight: FontWeight.bold,
+          color: Theme.of(context).colorScheme.onPrimaryContainer,
         ),
       ),
     );

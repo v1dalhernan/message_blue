@@ -12,7 +12,11 @@ abstract interface class NearbyTransport {
 
   Future<void> stop();
 
-  Future<void> requestConnection(String endpointId, String displayName);
+  Future<void> requestConnection(
+    String endpointId,
+    String displayName, {
+    String? enteredCode,
+  });
 
   Future<void> acceptConnection(String endpointId);
 

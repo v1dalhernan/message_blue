@@ -2,7 +2,7 @@ import 'dart:convert';
 
 enum MessageDirection { incoming, outgoing }
 
-enum MessageDelivery { sending, sent, failed }
+enum MessageDelivery { sending, inMailbox, sent, delivered, failed }
 
 enum ChatMessageType { text, image, audio }
 
@@ -23,6 +23,7 @@ class ChatMessage {
     this.editedAt,
     this.isGroup = false,
     this.hopCount = 0,
+    this.authorAvatar,
   });
 
   static const String groupEndpointId = 'group-mesh-all';
@@ -42,6 +43,7 @@ class ChatMessage {
   final DateTime? editedAt;
   final bool isGroup;
   final int hopCount;
+  final String? authorAvatar;
 
   ChatMessage copyWith({
     String? endpointId,
@@ -53,6 +55,7 @@ class ChatMessage {
     DateTime? editedAt,
     bool? isGroup,
     int? hopCount,
+    String? authorAvatar,
   }) {
     return ChatMessage(
       id: id,
@@ -70,6 +73,7 @@ class ChatMessage {
       editedAt: editedAt ?? this.editedAt,
       isGroup: isGroup ?? this.isGroup,
       hopCount: hopCount ?? this.hopCount,
+      authorAvatar: authorAvatar ?? this.authorAvatar,
     );
   }
 
@@ -83,6 +87,7 @@ class ChatMessage {
         'text': text,
         'sentAt': sentAt.toUtc().toIso8601String(),
         'msgType': type.name,
+        if (authorAvatar != null) 'avatar': authorAvatar,
         if (mediaBase64 != null) 'media': mediaBase64,
         if (durationSeconds != null) 'duration': durationSeconds,
         if (isEdited) 'isEdited': true,
@@ -141,6 +146,7 @@ class ChatMessage {
           : null,
       isGroup: decoded['isGroup'] == true,
       hopCount: (decoded['hops'] as int?) ?? 0,
+      authorAvatar: decoded['avatar'] as String?,
     );
   }
 }

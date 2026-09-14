@@ -1,8 +1,13 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../chat_controller.dart';
+import '../core/iot/enterprise_mesh_policy.dart';
 import '../models/nearby_peer.dart';
 import '../nearby/nearby_transport.dart';
 import 'mesh_group_chat_page.dart';
@@ -51,7 +56,8 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
             actions: [
-              if (_controller.isRunning)
+              if (_controller.isRunning &&
+                  EnterpriseMeshPolicy.instance.allowUserDisconnect)
                 IconButton(
                   tooltip: 'Salir de la red local',
                   onPressed: _controller.isBusy ? null : _controller.stop,
@@ -230,31 +236,112 @@ class _NetworkBody extends StatelessWidget {
             color: colors.primaryContainer,
             borderRadius: BorderRadius.circular(18),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  color: colors.primary,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      controller.displayName,
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
+              Row(
+                children: [
+                  UserAvatarWidget(
+                    avatarBase64: controller.localAvatar,
+                    name: controller.displayName,
+                    radius: 26,
+                    onTap: () => _showAvatarSelectionSheet(context, controller),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                controller.displayName,
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: colors.primary.withAlpha(40),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                controller.localUniqueId,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: colors.primary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Visible y buscando dispositivos cercanos',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ],
                     ),
-                    const Text('Visible y buscando dispositivos cercanos'),
+                  ),
+                  const Icon(Icons.radar),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: colors.surface.withAlpha(200),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: colors.outlineVariant.withAlpha(100)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.pin, size: 20, color: colors.primary),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Tu código para conectar: ',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                    SelectableText(
+                      controller.personalPin.length >= 6
+                          ? '${controller.personalPin.substring(0, 3)} ${controller.personalPin.substring(3)}'
+                          : controller.personalPin,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 2,
+                        color: colors.primary,
+                      ),
+                    ),
                   ],
                 ),
               ),
-              const Icon(Icons.radar),
+              if (controller.offlineMailboxCount > 0) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withAlpha(40),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.mark_email_unread_outlined, size: 16, color: Colors.amber),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${controller.offlineMailboxCount} mensaje(s) en buzón esperando entrega',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -316,23 +403,42 @@ class _PeerCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                CircleAvatar(
-                  backgroundColor: peer.isConnected
-                      ? colors.primaryContainer
-                      : colors.surfaceContainerHighest,
-                  child: Icon(
-                    peer.isConnected ? Icons.smartphone : Icons.devices_other,
-                  ),
+                UserAvatarWidget(
+                  avatarBase64: peer.avatarBase64 ??
+                      controller.userProfileService.getPeerAvatar(peer.id),
+                  name: peer.name,
+                  radius: 22,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        peer.name,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              peer.name,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (peer.uniqueId != null) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: colors.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                peer.uniqueId!,
+                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       Text(_statusLabel(peer.status)),
                     ],
@@ -343,11 +449,37 @@ class _PeerCard extends StatelessWidget {
                     peer.status == PeerConnectionStatus.failed ||
                     peer.status == PeerConnectionStatus.rejected)
                   FilledButton.tonal(
-                    onPressed: () => controller.connect(peer.id),
+                    onPressed: () => _showPinConnectionDialog(context, controller, peer),
                     child: const Text('Conectar'),
                   ),
               ],
             ),
+            if (peer.isSpoofed) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: colors.errorContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: colors.onErrorContainer, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '¡Alerta de Seguridad! Este dispositivo parece estar suplantando la identidad de "${peer.name}". La clave criptográfica no coincide con el registro previo.',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: colors.onErrorContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             if (peer.status == PeerConnectionStatus.awaitingApproval) ...[
               const SizedBox(height: 16),
               Container(
@@ -715,5 +847,287 @@ class _MeshGroupCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class UserAvatarWidget extends StatelessWidget {
+  const UserAvatarWidget({
+    super.key,
+    this.avatarBase64,
+    required this.name,
+    this.radius = 22,
+    this.onTap,
+  });
+
+  final String? avatarBase64;
+  final String name;
+  final double radius;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget avatarWidget;
+    if (avatarBase64 != null && avatarBase64!.startsWith('preset:')) {
+      final emoji = avatarBase64!.replaceFirst('preset:', '');
+      avatarWidget = CircleAvatar(
+        radius: radius,
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        child: Text(emoji, style: TextStyle(fontSize: radius * 1.1)),
+      );
+    } else if (avatarBase64 != null && avatarBase64!.isNotEmpty) {
+      try {
+        final bytes = base64Decode(avatarBase64!);
+        avatarWidget = CircleAvatar(
+          radius: radius,
+          backgroundImage: MemoryImage(bytes),
+        );
+      } catch (_) {
+        avatarWidget = CircleAvatar(
+          radius: radius,
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          child: Text(
+            name.isNotEmpty ? name[0].toUpperCase() : '?',
+            style: TextStyle(
+              fontSize: radius * 0.9,
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
+          ),
+        );
+      }
+    } else {
+      avatarWidget = CircleAvatar(
+        radius: radius,
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        child: Text(
+          name.isNotEmpty ? name[0].toUpperCase() : '?',
+          style: TextStyle(
+            fontSize: radius * 0.9,
+            fontWeight: FontWeight.bold,
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
+          ),
+        ),
+      );
+    }
+
+    if (onTap != null) {
+      return GestureDetector(
+        onTap: onTap,
+        child: Stack(
+          alignment: Alignment.bottomRight,
+          children: [
+            avatarWidget,
+            Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.camera_alt,
+                size: 11,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return avatarWidget;
+  }
+}
+
+void _showPinConnectionDialog(
+  BuildContext context,
+  ChatController controller,
+  NearbyPeer peer,
+) {
+  final pinController = TextEditingController();
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Row(
+        children: [
+          const Icon(Icons.pin_outlined),
+          const SizedBox(width: 8),
+          Expanded(child: Text('Conectar con ${peer.name}')),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Ingresa el código de 6 dígitos que aparece en la pantalla de ${peer.name}:',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: pinController,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            autofocus: true,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 26,
+              letterSpacing: 6,
+              fontWeight: FontWeight.bold,
+            ),
+            decoration: InputDecoration(
+              hintText: '000000',
+              counterText: '',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Al escribir el código correcto, la conexión se establecerá y verificará automáticamente.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final code = pinController.text.trim();
+            Navigator.pop(ctx);
+            controller.connect(peer.id, enteredCode: code.isNotEmpty ? code : null);
+          },
+          child: const Text('Conectar'),
+        ),
+      ],
+    ),
+  );
+}
+
+void _showAvatarSelectionSheet(BuildContext context, ChatController controller) {
+  showModalBottomSheet(
+    context: context,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Foto de perfil en BlueMesh',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Tu foto se transmitirá de forma liviana a los dispositivos cercanos en la red.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _avatarOptionButton(
+                  context,
+                  icon: Icons.camera_alt_outlined,
+                  label: 'Cámara',
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final picker = ImagePicker();
+                    final picked = await picker.pickImage(
+                      source: ImageSource.camera,
+                      maxWidth: 256,
+                      maxHeight: 256,
+                      imageQuality: 70,
+                    );
+                    if (picked != null) {
+                      await controller.updateProfileAvatar(File(picked.path));
+                    }
+                  },
+                ),
+                _avatarOptionButton(
+                  context,
+                  icon: Icons.photo_library_outlined,
+                  label: 'Galería',
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final picker = ImagePicker();
+                    final picked = await picker.pickImage(
+                      source: ImageSource.gallery,
+                      maxWidth: 256,
+                      maxHeight: 256,
+                      imageQuality: 70,
+                    );
+                    if (picked != null) {
+                      await controller.updateProfileAvatar(File(picked.path));
+                    }
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 8),
+            Text(
+              'O selecciona un avatar rápido:',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: ['🦊', '🤖', '🚀', '🐱', '⚡', '🛡️'].map((emoji) {
+                return InkWell(
+                  borderRadius: BorderRadius.circular(24),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    controller.setPresetAvatar(emoji);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Text(emoji, style: const TextStyle(fontSize: 28)),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Widget _avatarOptionButton(
+  BuildContext context, {
+  required IconData icon,
+  required String label,
+  required VoidCallback onTap,
+}) {
+  final colors = Theme.of(context).colorScheme;
+  return InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(16),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, size: 28, color: colors.primary),
+          const SizedBox(height: 6),
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+        ],
+      ),
+    ),
+  );
 }
 
