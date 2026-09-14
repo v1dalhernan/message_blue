@@ -19,6 +19,7 @@ class SecureSession {
   final List<int> publicKeyBytes;
   SecretKey? _sessionKey;
   bool _disposed = false;
+  bool hasSentKey = false;
 
   bool get isReady => _sessionKey != null && !_disposed;
 
@@ -92,6 +93,52 @@ class SecureSession {
     final mac = _decodeField(decoded, 'mac');
     final box = SecretBox(cipherText, nonce: nonce, mac: Mac(mac));
     return _cipher.decrypt(box, secretKey: key, aad: _associatedData);
+  }
+
+  Future<Map<String, String>> encryptRaw(List<int> clearText) async {
+    final key = _requireSessionKey();
+    final box = await _cipher.encrypt(
+      clearText,
+      secretKey: key,
+      aad: _associatedData,
+    );
+    return {
+      'nonce': base64Encode(box.nonce),
+      'ciphertext': base64Encode(box.cipherText),
+      'mac': base64Encode(box.mac.bytes),
+    };
+  }
+
+  Future<List<int>> decryptRaw({
+    required String nonceBase64,
+    required String ciphertextBase64,
+    required String macBase64,
+  }) async {
+    final key = _requireSessionKey();
+    final nonce = base64Decode(nonceBase64);
+    final cipherText = base64Decode(ciphertextBase64);
+    final mac = base64Decode(macBase64);
+    final box = SecretBox(cipherText, nonce: nonce, mac: Mac(mac));
+    return _cipher.decrypt(box, secretKey: key, aad: _associatedData);
+  }
+
+  Future<String> deriveSixDigitPin(List<int> remotePublicKeyBytes) async {
+    final key = _requireSessionKey();
+    final orderedKeys = _lexicographicCompare(publicKeyBytes, remotePublicKeyBytes) <= 0
+        ? [...publicKeyBytes, ...remotePublicKeyBytes]
+        : [...remotePublicKeyBytes, ...publicKeyBytes];
+
+    final keyBytes = await key.extractBytes();
+    final combined = [...orderedKeys, ...keyBytes, ...utf8.encode('pin-verification-v2')];
+    final digest = await Sha256().hash(combined);
+
+    final intVal = ((digest.bytes[0] & 0x7F) << 24) |
+        (digest.bytes[1] << 16) |
+        (digest.bytes[2] << 8) |
+        digest.bytes[3];
+
+    final pin = (intVal % 900000) + 100000;
+    return pin.toString().padLeft(6, '0');
   }
 
   static bool isKeyExchangePayload(Map<String, dynamic> payload) {

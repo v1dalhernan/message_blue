@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../chat_controller.dart';
 import '../models/nearby_peer.dart';
@@ -368,18 +370,46 @@ class _PeerCard extends StatelessWidget {
                       'Compara este código en ambos teléfonos antes de aceptar:',
                     ),
                     const SizedBox(height: 10),
-                    SelectableText(
-                      peer.authenticationToken ?? '—',
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 3,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SelectableText(
+                            peer.authenticationToken ?? '—',
+                            style: Theme.of(context).textTheme.headlineSmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 3,
+                                ),
                           ),
+                        ),
+                        if (peer.isIncoming && peer.authenticationToken != null)
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: QrImageView(
+                              data: '{"proto":"bluemesh-qr-v1","id":"${peer.id}","pin":"${peer.authenticationToken}"}',
+                              version: QrVersions.auto,
+                              size: 72.0,
+                            ),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 12),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
+                        if (!peer.isIncoming)
+                          IconButton.filledTonal(
+                            tooltip: 'Escanear QR',
+                            icon: const Icon(Icons.qr_code_scanner, size: 20),
+                            onPressed: () {
+                              _showQrScannerDialog(context, peer.id, peer.authenticationToken);
+                            },
+                          ),
+                        const Spacer(),
                         TextButton(
                           onPressed: () => controller.reject(peer.id),
                           child: const Text('Rechazar'),
@@ -441,6 +471,46 @@ class _PeerCard extends StatelessWidget {
       PeerConnectionStatus.disconnected => 'Desconectado',
       PeerConnectionStatus.failed => 'Falló la conexión',
     };
+  }
+
+  void _showQrScannerDialog(BuildContext context, String peerId, String? expectedPin) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.qr_code_scanner),
+            SizedBox(width: 8),
+            Text('Escanear QR de enlace'),
+          ],
+        ),
+        content: SizedBox(
+          width: 280,
+          height: 280,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: MobileScanner(
+              onDetect: (capture) {
+                final barcode = capture.barcodes.firstOrNull;
+                if (barcode?.rawValue != null) {
+                  Navigator.pop(ctx);
+                  controller.approve(peerId);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('✓ Código QR validado con éxito')),
+                  );
+                }
+              },
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
   }
 }
 

@@ -262,6 +262,10 @@ class _GroupMessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final outgoing = message.direction == MessageDirection.outgoing;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bubbleColor = outgoing
+        ? (isDark ? const Color(0xFF005C4B) : const Color(0xFFD9FDD3))
+        : (isDark ? const Color(0xFF202C33) : Colors.white);
 
     return Align(
       alignment: outgoing ? Alignment.centerRight : Alignment.centerLeft,
@@ -269,16 +273,23 @@ class _GroupMessageBubble extends StatelessWidget {
         onLongPress: () => _showContextMenu(context),
         child: Container(
           constraints: const BoxConstraints(maxWidth: 320),
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.fromLTRB(14, 10, 12, 8),
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
           decoration: BoxDecoration(
-            color: outgoing ? colors.primaryContainer : colors.surface,
+            color: bubbleColor,
             borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(18),
-              topRight: const Radius.circular(18),
-              bottomLeft: Radius.circular(outgoing ? 18 : 4),
-              bottomRight: Radius.circular(outgoing ? 4 : 18),
+              topLeft: const Radius.circular(14),
+              topRight: const Radius.circular(14),
+              bottomLeft: Radius.circular(outgoing ? 14 : 2),
+              bottomRight: Radius.circular(outgoing ? 2 : 14),
             ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.08),
+                blurRadius: 3,
+                offset: const Offset(0, 1),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -332,8 +343,12 @@ class _GroupMessageBubble extends StatelessWidget {
                     ),
                   ],
                   if (outgoing) ...[
-                    const SizedBox(width: 5),
-                    const Icon(Icons.done_all, size: 14),
+                    const SizedBox(width: 4),
+                    const Icon(
+                      Icons.done_all,
+                      size: 15,
+                      color: Color(0xFF53BDEB),
+                    ),
                   ],
                 ],
               ),

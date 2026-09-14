@@ -208,7 +208,7 @@ class LanSocketTransport implements NearbyTransport {
   @override
   Future<void> requestConnection(String endpointId, String displayName) async {
     final token =
-        '${(endpointId.hashCode % 9000 + 1000).abs()}'; // Token visual de 4 dígitos
+        '${(endpointId.hashCode.abs() % 900000 + 100000)}'; // Token visual de 6 dígitos
     _sendFrame({
       'action': 'connect_request',
       'from': _localId,
