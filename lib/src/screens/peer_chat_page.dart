@@ -61,7 +61,7 @@ class _PeerChatPageState extends State<PeerChatPage> {
               children: [
                 Text(peer?.name ?? 'Dispositivo'),
                 Text(
-                  isConnected ? 'Conexión local activa' : 'Sin conexión',
+                  isConnected ? 'Cifrado E2E · AES-256-GCM' : 'Sin conexión',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],

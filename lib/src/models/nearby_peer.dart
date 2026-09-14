@@ -2,6 +2,7 @@ enum PeerConnectionStatus {
   discovered,
   connecting,
   awaitingApproval,
+  securing,
   connected,
   rejected,
   disconnected,

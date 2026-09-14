@@ -23,6 +23,7 @@ class ChatController extends ChangeNotifier {
   String? _errorMessage;
 
   bool get isSupported => _transport.isSupported;
+  bool get isDemo => _transport.isDemo;
   bool get isRunning => _isRunning;
   bool get isBusy => _isBusy;
   String get displayName => _displayName;
@@ -195,12 +196,18 @@ class ChatController extends ChangeNotifier {
         );
       case ConnectionChanged():
         final status = switch (event.outcome) {
-          ConnectionOutcome.connected => PeerConnectionStatus.connected,
+          ConnectionOutcome.connected => PeerConnectionStatus.securing,
           ConnectionOutcome.rejected => PeerConnectionStatus.rejected,
           ConnectionOutcome.failed => PeerConnectionStatus.failed,
           ConnectionOutcome.disconnected => PeerConnectionStatus.disconnected,
         };
         _updatePeerStatus(event.endpointId, status, shouldNotify: false);
+      case SecureChannelReady():
+        _updatePeerStatus(
+          event.endpointId,
+          PeerConnectionStatus.connected,
+          shouldNotify: false,
+        );
       case MessageReceived():
         _messages
             .putIfAbsent(event.message.endpointId, () => [])

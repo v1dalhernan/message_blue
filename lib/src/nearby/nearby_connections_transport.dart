@@ -1,14 +1,17 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:cryptography/cryptography.dart';
 import 'package:nearby_connections/nearby_connections.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../models/chat_message.dart';
 import 'nearby_event.dart';
 import 'nearby_transport.dart';
+import 'secure_session.dart';
 
 class NearbyConnectionsTransport implements NearbyTransport {
   static const _serviceId = 'com.threedors.message_blue';
@@ -17,11 +20,17 @@ class NearbyConnectionsTransport implements NearbyTransport {
   final Nearby _nearby = Nearby();
   final StreamController<NearbyEvent> _events =
       StreamController<NearbyEvent>.broadcast();
+  final Map<String, Future<SecureSession>> _sessions = {};
+  final Set<String> _keyExchangeSent = {};
+  final Set<String> _secureEndpoints = {};
 
   bool _started = false;
 
   @override
   bool get isSupported => Platform.isAndroid;
+
+  @override
+  bool get isDemo => false;
 
   @override
   Stream<NearbyEvent> get events => _events.stream;
@@ -150,9 +159,15 @@ class NearbyConnectionsTransport implements NearbyTransport {
       Status.ERROR => ConnectionOutcome.failed,
     };
     _events.add(ConnectionChanged(endpointId: endpointId, outcome: outcome));
+    if (status == Status.CONNECTED) {
+      unawaited(_sendKeyExchange(endpointId).catchError(_emitSecureError));
+    } else {
+      _clearSecureSession(endpointId);
+    }
   }
 
   void _onDisconnected(String endpointId) {
+    _clearSecureSession(endpointId);
     _events.add(
       ConnectionChanged(
         endpointId: endpointId,
@@ -175,18 +190,73 @@ class NearbyConnectionsTransport implements NearbyTransport {
   void _onPayloadReceived(String endpointId, Payload payload) {
     if (payload.type != PayloadType.BYTES || payload.bytes == null) return;
 
+    unawaited(_handleBytesPayload(endpointId, payload.bytes!));
+  }
+
+  Future<void> _handleBytesPayload(String endpointId, Uint8List bytes) async {
     try {
+      final decoded = jsonDecode(utf8.decode(bytes));
+      if (decoded is Map<String, dynamic> &&
+          SecureSession.isKeyExchangePayload(decoded)) {
+        final session = await _sessionFor(endpointId);
+        await session.establish(SecureSession.keyFromPayload(decoded));
+        await _sendKeyExchange(endpointId);
+        if (_secureEndpoints.add(endpointId)) {
+          _events.add(SecureChannelReady(endpointId));
+        }
+        return;
+      }
+
+      final session = await _sessionFor(endpointId);
+      final clearText = await session.decrypt(bytes);
       final message = ChatMessage.fromPayload(
         endpointId: endpointId,
-        bytes: payload.bytes!,
+        bytes: clearText,
       );
       _events.add(MessageReceived(message));
+    } on SecretBoxAuthenticationError {
+      _events.add(
+        const NearbyFailure(
+          'Se rechazó un mensaje porque su autenticación cifrada no es válida.',
+        ),
+      );
     } on FormatException catch (error) {
       _events.add(NearbyFailure(error.message));
     } catch (_) {
       _events.add(
-        const NearbyFailure('Se recibió un mensaje que no se pudo leer.'),
+        const NearbyFailure('Se recibió un mensaje que no se pudo descifrar.'),
       );
+    }
+  }
+
+  Future<SecureSession> _sessionFor(String endpointId) {
+    return _sessions.putIfAbsent(endpointId, SecureSession.create);
+  }
+
+  Future<void> _sendKeyExchange(String endpointId) async {
+    if (!_keyExchangeSent.add(endpointId)) return;
+    try {
+      final session = await _sessionFor(endpointId);
+      await _nearby.sendBytesPayload(
+        endpointId,
+        Uint8List.fromList(session.createKeyExchangePayload()),
+      );
+    } catch (_) {
+      _keyExchangeSent.remove(endpointId);
+      rethrow;
+    }
+  }
+
+  void _emitSecureError(Object error) {
+    _events.add(NearbyFailure('No se pudo crear el canal cifrado: $error'));
+  }
+
+  void _clearSecureSession(String endpointId) {
+    _keyExchangeSent.remove(endpointId);
+    _secureEndpoints.remove(endpointId);
+    final session = _sessions.remove(endpointId);
+    if (session != null) {
+      unawaited(session.then((value) => value.dispose()));
     }
   }
 
@@ -202,9 +272,20 @@ class NearbyConnectionsTransport implements NearbyTransport {
 
   @override
   Future<void> sendMessage(ChatMessage message) {
-    return _nearby.sendBytesPayload(
+    return _sendEncryptedMessage(message);
+  }
+
+  Future<void> _sendEncryptedMessage(ChatMessage message) async {
+    final session = await _sessionFor(message.endpointId);
+    if (!session.isReady) {
+      throw const NearbySetupException(
+        'El intercambio de claves todavía no ha terminado.',
+      );
+    }
+    final encrypted = await session.encrypt(message.toPayload());
+    await _nearby.sendBytesPayload(
       message.endpointId,
-      Uint8List.fromList(message.toPayload()),
+      Uint8List.fromList(encrypted),
     );
   }
 
@@ -213,6 +294,9 @@ class NearbyConnectionsTransport implements NearbyTransport {
     _started = false;
     await _safeStopRadioOperations();
     await _nearby.stopAllEndpoints();
+    for (final endpointId in _sessions.keys.toList()) {
+      _clearSecureSession(endpointId);
+    }
   }
 
   Future<void> _safeStopRadioOperations() async {

@@ -40,6 +40,12 @@ class ConnectionChanged extends NearbyEvent {
   final ConnectionOutcome outcome;
 }
 
+class SecureChannelReady extends NearbyEvent {
+  const SecureChannelReady(this.endpointId);
+
+  final String endpointId;
+}
+
 class MessageReceived extends NearbyEvent {
   const MessageReceived(this.message);
 

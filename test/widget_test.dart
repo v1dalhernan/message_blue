@@ -63,6 +63,7 @@ void main() {
         outcome: ConnectionOutcome.connected,
       ),
     );
+    transport.add(const SecureChannelReady('peer-1'));
     await tester.pump();
 
     expect(find.text('Abrir chat'), findsOneWidget);
@@ -80,6 +81,9 @@ class FakeNearbyTransport implements NearbyTransport {
 
   @override
   bool get isSupported => true;
+
+  @override
+  bool get isDemo => false;
 
   @override
   Stream<NearbyEvent> get events => _events.stream;

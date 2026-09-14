@@ -259,6 +259,13 @@ class _NetworkBody extends StatelessWidget {
           const SizedBox(height: 12),
           _ErrorCard(message: error, onClose: controller.clearError),
         ],
+        if (controller.isDemo) ...[
+          const SizedBox(height: 12),
+          const _NoticeCard(
+            icon: Icons.science_outlined,
+            message: 'Modo emulador: los pares son virtuales, pero el cifrado y el flujo del chat son reales.',
+          ),
+        ],
         const SizedBox(height: 24),
         Text(
           'Dispositivos cercanos',
@@ -425,6 +432,7 @@ class _PeerCard extends StatelessWidget {
       PeerConnectionStatus.discovered => 'Disponible',
       PeerConnectionStatus.connecting => 'Conectando…',
       PeerConnectionStatus.awaitingApproval => 'Esperando aprobación',
+      PeerConnectionStatus.securing => 'Creando canal cifrado…',
       PeerConnectionStatus.connected => 'Conectado',
       PeerConnectionStatus.rejected => 'Solicitud rechazada',
       PeerConnectionStatus.disconnected => 'Desconectado',

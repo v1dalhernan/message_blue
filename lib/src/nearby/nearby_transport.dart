@@ -4,6 +4,8 @@ import 'nearby_event.dart';
 abstract interface class NearbyTransport {
   bool get isSupported;
 
+  bool get isDemo;
+
   Stream<NearbyEvent> get events;
 
   Future<void> start(String displayName);

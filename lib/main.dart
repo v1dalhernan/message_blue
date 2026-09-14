@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'src/nearby/demo_nearby_transport.dart';
 import 'src/nearby/nearby_connections_transport.dart';
 import 'src/nearby/nearby_transport.dart';
 import 'src/screens/home_page.dart';
@@ -36,7 +37,12 @@ class BlueMeshApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: HomePage(transport: transport ?? NearbyConnectionsTransport()),
+      home: HomePage(transport: transport ?? _defaultTransport()),
     );
+  }
+
+  NearbyTransport _defaultTransport() {
+    const demoMode = bool.fromEnvironment('DEMO_MODE');
+    return demoMode ? DemoNearbyTransport() : NearbyConnectionsTransport();
   }
 }
