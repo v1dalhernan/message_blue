@@ -584,11 +584,6 @@ class ChatRepositoryImpl implements ChatRepository {
       await _confirmVerificationSuccess(peerId);
       return true;
     }
-    // Si no hay PIN registrado o coincidencia flexible
-    if (pin.trim().length == 6) {
-      await _confirmVerificationSuccess(peerId);
-      return true;
-    }
     return false;
   }
 

@@ -1,16 +1,15 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import '../../core/identity/user_identity_service.dart';
 
 /// Widget dinámico estilo 2FA (TOTP) que muestra un código PIN de 6 dígitos
 /// que se renueva automáticamente cada 30 segundos, con indicador visual
 /// de cuenta regresiva y progreso circular.
 class TotpPinWidget extends StatefulWidget {
-  const TotpPinWidget({
-    super.key,
-    this.compact = false,
-  });
+  const TotpPinWidget({super.key, this.compact = false});
 
   /// Si es true, se muestra en formato compacto para la barra superior.
   final bool compact;
@@ -38,9 +37,10 @@ class _TotpPinWidgetState extends State<TotpPinWidget> {
 
   void _updateState() {
     final service = UserIdentityService.instance;
-    _pin = service.getCurrentPin();
-    _remainingSeconds = service.getSecondsRemaining();
-    _progress = service.getProgress();
+    final now = DateTime.now();
+    _pin = service.getCurrentPin(now);
+    _remainingSeconds = service.getSecondsRemaining(now);
+    _progress = service.getProgress(now);
   }
 
   @override
@@ -76,7 +76,7 @@ class _TotpPinWidgetState extends State<TotpPinWidget> {
           Icon(Icons.shield_outlined, size: 20, color: colors.primary),
           const SizedBox(width: 8),
           const Text(
-            'Código 2FA: ',
+            'PIN: ',
             style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
           ),
           SelectableText(
@@ -91,7 +91,8 @@ class _TotpPinWidgetState extends State<TotpPinWidget> {
           const Spacer(),
           // Contador circular animado
           Tooltip(
-            message: 'Código dinámico tipo 2FA. Cambia automáticamente en ${_remainingSeconds}s.',
+            message:
+                'Código dinámico tipo 2FA. Cambia automáticamente en ${_remainingSeconds}s.',
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -117,7 +118,10 @@ class _TotpPinWidgetState extends State<TotpPinWidget> {
                 const SizedBox(width: 4),
                 IconButton(
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 28,
+                  ),
                   icon: const Icon(Icons.copy, size: 15),
                   tooltip: 'Copiar PIN',
                   onPressed: _copyPin,
@@ -143,13 +147,19 @@ class _TotpPinWidgetState extends State<TotpPinWidget> {
                 Icon(Icons.security, size: 20, color: colors.primary),
                 const SizedBox(width: 8),
                 Text(
-                  'PIN Personal de Enlace (2FA Dinámico)',
-                  style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+                  'PIN temporal de enlace',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colors.onSurfaceVariant,
+                  ),
                 ),
                 const Spacer(),
                 IconButton(
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 28,
+                  ),
                   icon: const Icon(Icons.copy, size: 16),
                   tooltip: 'Copiar PIN',
                   onPressed: _copyPin,

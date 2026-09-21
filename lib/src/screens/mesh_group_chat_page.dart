@@ -11,6 +11,7 @@ import 'package:record/record.dart';
 
 import '../chat_controller.dart';
 import '../models/chat_message.dart';
+import 'widgets/chat_visibility.dart';
 
 class MeshGroupChatPage extends StatefulWidget {
   const MeshGroupChatPage({super.key, required this.controller});
@@ -21,7 +22,12 @@ class MeshGroupChatPage extends StatefulWidget {
   State<MeshGroupChatPage> createState() => _MeshGroupChatPageState();
 }
 
-class _MeshGroupChatPageState extends State<MeshGroupChatPage> {
+class _MeshGroupChatPageState extends State<MeshGroupChatPage>
+    with ChatVisibility<MeshGroupChatPage> {
+  @override
+  ChatController get chatController => widget.controller;
+  @override
+  String get visibleChatId => ChatMessage.groupEndpointId;
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
@@ -81,9 +87,9 @@ class _MeshGroupChatPageState extends State<MeshGroupChatPage> {
       _scrollToBottom();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al adjuntar imagen: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al adjuntar imagen: $e')));
     }
   }
 
@@ -193,9 +199,8 @@ class _MeshGroupChatPageState extends State<MeshGroupChatPage> {
                       hasConnected
                           ? '$connectedCount nodo${connectedCount > 1 ? 's' : ''} · Cifrado Malla'
                           : 'Sin dispositivos conectados',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: hasConnected ? Colors.teal : null,
-                          ),
+                      style: Theme.of(context).textTheme.bodySmall
+                          ?.copyWith(color: hasConnected ? Colors.teal : null),
                     ),
                   ],
                 ),
@@ -249,10 +254,7 @@ class _MeshGroupChatPageState extends State<MeshGroupChatPage> {
 }
 
 class _GroupMessageBubble extends StatelessWidget {
-  const _GroupMessageBubble({
-    required this.message,
-    required this.onEdit,
-  });
+  const _GroupMessageBubble({required this.message, required this.onEdit});
 
   final ChatMessage message;
   final VoidCallback onEdit;
@@ -322,7 +324,9 @@ class _GroupMessageBubble extends StatelessWidget {
                       const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 1),
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
                           color: colors.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(10),
@@ -350,9 +354,8 @@ class _GroupMessageBubble extends StatelessWidget {
                     const SizedBox(width: 4),
                     Text(
                       '(editado)',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            fontStyle: FontStyle.italic,
-                          ),
+                      style: Theme.of(context).textTheme.labelSmall
+                          ?.copyWith(fontStyle: FontStyle.italic),
                     ),
                   ],
                   if (outgoing) ...[
@@ -417,7 +420,8 @@ class _GroupMessageBubble extends StatelessWidget {
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                          content: Text('Texto copiado al portapapeles')),
+                        content: Text('Texto copiado al portapapeles'),
+                      ),
                     );
                   },
                 ),
@@ -453,10 +457,7 @@ class _GroupImageWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     Widget imageWidget;
     if (message.mediaPath != null && File(message.mediaPath!).existsSync()) {
-      imageWidget = Image.file(
-        File(message.mediaPath!),
-        fit: BoxFit.cover,
-      );
+      imageWidget = Image.file(File(message.mediaPath!), fit: BoxFit.cover);
     } else if (message.mediaBase64 != null) {
       imageWidget = Image.memory(
         base64Decode(message.mediaBase64!),
@@ -549,7 +550,9 @@ class _GroupAudioWidgetState extends State<_GroupAudioWidget> {
       } else if (widget.message.mediaBase64 != null) {
         final bytes = base64Decode(widget.message.mediaBase64!);
         final dir = await getTemporaryDirectory();
-        final tmp = File('${dir.path}/temp_group_play_${widget.message.id}.m4a');
+        final tmp = File(
+          '${dir.path}/temp_group_play_${widget.message.id}.m4a',
+        );
         await tmp.writeAsBytes(bytes);
         await _player.play(DeviceFileSource(tmp.path));
       }
@@ -680,9 +683,9 @@ class _GroupComposerState extends State<_GroupComposer> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al iniciar grabación: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al iniciar grabación: $e')));
     }
   }
 
@@ -702,9 +705,9 @@ class _GroupComposerState extends State<_GroupComposer> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al detener grabación: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al detener grabación: $e')));
     }
   }
 
@@ -767,18 +770,25 @@ class _GroupComposerState extends State<_GroupComposer> {
                     children: [
                       IconButton(
                         tooltip: 'Cancelar grabación',
-                        icon:
-                            const Icon(Icons.delete_outline, color: Colors.red),
+                        icon: const Icon(
+                          Icons.delete_outline,
+                          color: Colors.red,
+                        ),
                         onPressed: _cancelRecording,
                       ),
                       const SizedBox(width: 8),
-                      const Icon(Icons.fiber_manual_record,
-                          color: Colors.red, size: 16),
+                      const Icon(
+                        Icons.fiber_manual_record,
+                        color: Colors.red,
+                        size: 16,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         'Grabando: ${_recordSeconds}s',
                         style: const TextStyle(
-                            fontWeight: FontWeight.bold, color: Colors.red),
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red,
+                        ),
                       ),
                       const Spacer(),
                       IconButton.filled(
@@ -812,8 +822,8 @@ class _GroupComposerState extends State<_GroupComposer> {
                           decoration: InputDecoration(
                             hintText: widget.enabled
                                 ? (widget.editingMessage != null
-                                    ? 'Edita tu mensaje grupal...'
-                                    : 'Mensaje para todos en la malla...')
+                                      ? 'Edita tu mensaje grupal...'
+                                      : 'Mensaje para todos en la malla...')
                                 : 'Conecta al menos un dispositivo',
                             counterText: '',
                             contentPadding: const EdgeInsets.symmetric(
@@ -821,8 +831,9 @@ class _GroupComposerState extends State<_GroupComposer> {
                               vertical: 10,
                             ),
                           ),
-                          onSubmitted:
-                              widget.enabled ? (_) => widget.onSend() : null,
+                          onSubmitted: widget.enabled
+                              ? (_) => widget.onSend()
+                              : null,
                         ),
                       ),
                       const SizedBox(width: 6),
@@ -831,9 +842,11 @@ class _GroupComposerState extends State<_GroupComposer> {
                             ? 'Guardar'
                             : 'Enviar a la malla',
                         onPressed: widget.enabled ? widget.onSend : null,
-                        icon: Icon(widget.editingMessage != null
-                            ? Icons.check
-                            : Icons.send),
+                        icon: Icon(
+                          widget.editingMessage != null
+                              ? Icons.check
+                              : Icons.send,
+                        ),
                       ),
                     ],
                   ),

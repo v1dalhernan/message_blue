@@ -6,19 +6,22 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'core/identity/user_identity_service.dart';
+import 'core/notifications/chat_notifications.dart';
 import 'core/profile/user_profile_service.dart';
 import 'core/storage/offline_mailbox_service.dart';
+import 'core/storage/chat_history_store.dart';
 import 'models/chat_message.dart';
 import 'models/nearby_peer.dart';
 import 'nearby/nearby_event.dart';
 import 'nearby/nearby_transport.dart';
 
 class ChatController extends ChangeNotifier {
-  ChatController(this._transport) {
+  ChatController(this._transport, {this.persistHistory = false}) {
     _subscription = _transport.events.listen(_handleEvent);
   }
 
   final NearbyTransport _transport;
+  final bool persistHistory;
   late final StreamSubscription<NearbyEvent> _subscription;
   final Map<String, NearbyPeer> _peers = {};
   final Map<String, List<ChatMessage>> _messages = {};
@@ -32,12 +35,124 @@ class ChatController extends ChangeNotifier {
   bool _isBusy = false;
   String _displayName = '';
   String? _errorMessage;
+  String? _openChatId;
+  bool _foreground = true;
+  bool _disposed = false;
+  ChatHistoryStore? _history;
+  Future<void>? _initialization;
+  Timer? _saveTimer;
+
+  Future<void> initialize() => _initialization ??= _restoreHistory();
+
+  Future<void> _restoreHistory() async {
+    if (!persistHistory) return;
+    await UserProfileService.instance.loadProfile();
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final store = ChatHistoryStore(File('${dir.path}/chat_history.json'));
+      final data = await store.read();
+      if (_disposed) return;
+      if (data != null) {
+        for (final item in data['peers'] as List<dynamic>) {
+          final peer = item as Map<String, dynamic>;
+          _peers[peer['id'] as String] = NearbyPeer(
+            id: peer['id'] as String,
+            name: peer['name'] as String,
+            status: PeerConnectionStatus.disconnected,
+          );
+        }
+        for (final item in data['messages'] as List<dynamic>) {
+          var message = ChatHistoryStore.decode(item as Map<String, dynamic>);
+          if (message.mediaBase64 != null) {
+            final ext = message.type == ChatMessageType.image ? 'jpg' : 'm4a';
+            final media = File(
+              '${dir.path}/media_${base64Url.encode(utf8.encode(message.id))}.$ext',
+            );
+            if (!await media.exists()) {
+              await media.writeAsBytes(base64Decode(message.mediaBase64!));
+            }
+            message = message.copyWith(mediaPath: media.path);
+          }
+          final chat = message.isGroup
+              ? ChatMessage.groupEndpointId
+              : message.endpointId;
+          _messages.putIfAbsent(chat, () => []).add(message);
+          _seenMessageIds.add(
+            '${message.isGroup ? "group" : message.endpointId}:${message.id}',
+          );
+          if (message.isGroup) _seenMessageIds.add(message.id);
+          if (message.direction == MessageDirection.outgoing &&
+              message.delivery == MessageDelivery.inMailbox) {
+            OfflineMailboxService.instance.queueMessage(
+              message,
+              message.endpointId,
+            );
+          }
+        }
+      }
+      _history = store;
+      notifyListeners();
+    } catch (error) {
+      debugPrint('No se pudo restaurar el historial: $error');
+    }
+  }
+
+  Future<void> _persistHistory() async {
+    try {
+      await _history?.write({
+        'version': 1,
+        'peers': [
+          for (final peer in _peers.values) {'id': peer.id, 'name': peer.name},
+        ],
+        'messages': [
+          for (final list in _messages.values)
+            for (final message in list) ChatHistoryStore.encode(message),
+        ],
+      });
+    } catch (error) {
+      debugPrint('No se pudo guardar el historial: $error');
+    }
+  }
+
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    if (_history != null) {
+      _saveTimer?.cancel();
+      _saveTimer = Timer(const Duration(milliseconds: 200), _persistHistory);
+    }
+    super.notifyListeners();
+  }
+
+  bool isChatVisible(String chatId) => _foreground && _openChatId == chatId;
+
+  void openChat(String chatId) {
+    _openChatId = chatId;
+    // Navigation callbacks can run during build.
+    scheduleMicrotask(() {
+      if (!_disposed && isChatVisible(chatId)) {
+        markChatAsRead(chatId);
+        notifyListeners();
+      }
+    });
+  }
+
+  void closeChat(String chatId) {
+    if (_openChatId == chatId) _openChatId = null;
+  }
+
+  void setForeground(bool value) {
+    _foreground = value;
+    if (value && _openChatId != null) openChat(_openChatId!);
+  }
 
   bool get isSupported => _transport.isSupported;
   bool get isDemo => _transport.isDemo;
   bool get isRunning => _isRunning;
   bool get isBusy => _isBusy;
-  String get displayName => _displayName.isNotEmpty ? _displayName : UserProfileService.instance.displayName;
+  String get displayName => _displayName.isNotEmpty
+      ? _displayName
+      : UserProfileService.instance.displayName;
   String get statusMessage => UserProfileService.instance.statusMessage;
   String? get errorMessage => _errorMessage;
 
@@ -47,7 +162,8 @@ class ChatController extends ChangeNotifier {
       _peerConnectionNotifications.stream;
 
   String get localUniqueId => UserIdentityService.instance.fingerprint;
-  String get personalPin => UserIdentityService.instance.getPersonalPin(displayName);
+  String get personalPin =>
+      UserIdentityService.instance.getPersonalPin(displayName);
   String? get localAvatar => UserProfileService.instance.localAvatarBase64;
   int get offlineMailboxCount => OfflineMailboxService.instance.pendingCount;
 
@@ -77,9 +193,11 @@ class ChatController extends ChangeNotifier {
     final list = _messages[endpointId];
     if (list == null) return 0;
     return list
-        .where((m) =>
-            m.direction == MessageDirection.incoming &&
-            m.delivery != MessageDelivery.read)
+        .where(
+          (m) =>
+              m.direction == MessageDirection.incoming &&
+              m.delivery != MessageDelivery.read,
+        )
         .length;
   }
 
@@ -96,8 +214,10 @@ class ChatController extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
+      await initialize();
       await UserIdentityService.instance.getUniqueId(name);
       await _transport.start(name);
+      await ChatNotifications.setNetworkActive(true);
       _displayName = name;
       _isRunning = true;
       return true;
@@ -120,9 +240,11 @@ class ChatController extends ChangeNotifier {
 
   void setPresetAvatar(String preset) {
     UserProfileService.instance.setPresetAvatar(preset);
-    unawaited(_transport.sendProfileUpdate(
-      avatar: UserProfileService.instance.localAvatarBase64,
-    ));
+    unawaited(
+      _transport.sendProfileUpdate(
+        avatar: UserProfileService.instance.localAvatarBase64,
+      ),
+    );
     notifyListeners();
   }
 
@@ -131,9 +253,7 @@ class ChatController extends ChangeNotifier {
     if (trimmed.isNotEmpty) {
       _displayName = trimmed;
       UserProfileService.instance.setDisplayName(trimmed);
-      unawaited(_transport.sendProfileUpdate(
-        name: trimmed,
-      ));
+      unawaited(_transport.sendProfileUpdate(name: trimmed));
       notifyListeners();
     }
   }
@@ -158,9 +278,14 @@ class ChatController extends ChangeNotifier {
         list[i] = msg.copyWith(delivery: MessageDelivery.read);
         updated = true;
         unawaited(
-          _transport.sendReadReceipt(peerEndpointId, msg.id).catchError((e) {
-            debugPrint('Error enviando confirmacion de lectura: $e');
-          }),
+          _transport
+              .sendReadReceipt(
+                msg.isGroup ? msg.endpointId : peerEndpointId,
+                msg.id,
+              )
+              .catchError((e) {
+                debugPrint('Error enviando confirmacion de lectura: $e');
+              }),
         );
       }
     }
@@ -175,10 +300,14 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
     try {
       await _transport.stop();
+      await ChatNotifications.setNetworkActive(false);
       _isRunning = false;
-      _peers.clear();
-      _messages.clear();
-      _seenMessageIds.clear();
+      for (final peer in _peers.values.toList()) {
+        _peers[peer.id] = peer.copyWith(
+          status: PeerConnectionStatus.disconnected,
+        );
+      }
+      await _persistHistory();
     } catch (error) {
       _setError(error.toString());
     } finally {
@@ -254,7 +383,9 @@ class ChatController extends ChangeNotifier {
       text: text,
       sentAt: now,
       direction: MessageDirection.outgoing,
-      delivery: isConnected ? MessageDelivery.sending : MessageDelivery.inMailbox,
+      delivery: isConnected
+          ? MessageDelivery.sending
+          : MessageDelivery.inMailbox,
     );
     final messages = _messages.putIfAbsent(endpointId, () => []);
     messages.add(message);
@@ -263,9 +394,6 @@ class ChatController extends ChangeNotifier {
     if (!isConnected) {
       // Si el destinatario no está conectado, encolar en el buzón offline
       OfflineMailboxService.instance.queueMessage(message, endpointId);
-      try {
-        await _transport.sendMessage(message);
-      } catch (_) {}
       return true;
     }
 
@@ -304,18 +432,20 @@ class ChatController extends ChangeNotifier {
       hopCount: 0,
     );
 
-    final groupList =
-        _messages.putIfAbsent(ChatMessage.groupEndpointId, () => []);
+    final groupList = _messages.putIfAbsent(
+      ChatMessage.groupEndpointId,
+      () => [],
+    );
     groupList.add(localMsg);
     notifyListeners();
 
     for (final peer in connectedPeers) {
       unawaited(
-        _transport.sendMessage(
-          localMsg.copyWith(endpointId: peer.id),
-        ).catchError((e) {
-          debugPrint('Error enviando a ${peer.name}: $e');
-        }),
+        _transport
+            .sendMessage(localMsg.copyWith(endpointId: peer.id))
+            .catchError((e) {
+              debugPrint('Error enviando a ${peer.name}: $e');
+            }),
       );
     }
     return true;
@@ -387,18 +517,20 @@ class ChatController extends ChangeNotifier {
       hopCount: 0,
     );
 
-    final groupList =
-        _messages.putIfAbsent(ChatMessage.groupEndpointId, () => []);
+    final groupList = _messages.putIfAbsent(
+      ChatMessage.groupEndpointId,
+      () => [],
+    );
     groupList.add(localMsg);
     notifyListeners();
 
     for (final peer in connectedPeers) {
       unawaited(
-        _transport.sendMessage(
-          localMsg.copyWith(endpointId: peer.id),
-        ).catchError((e) {
-          debugPrint('Error enviando imagen grupal a ${peer.name}: $e');
-        }),
+        _transport
+            .sendMessage(localMsg.copyWith(endpointId: peer.id))
+            .catchError((e) {
+              debugPrint('Error enviando imagen grupal a ${peer.name}: $e');
+            }),
       );
     }
     return true;
@@ -472,18 +604,20 @@ class ChatController extends ChangeNotifier {
       hopCount: 0,
     );
 
-    final groupList =
-        _messages.putIfAbsent(ChatMessage.groupEndpointId, () => []);
+    final groupList = _messages.putIfAbsent(
+      ChatMessage.groupEndpointId,
+      () => [],
+    );
     groupList.add(localMsg);
     notifyListeners();
 
     for (final peer in connectedPeers) {
       unawaited(
-        _transport.sendMessage(
-          localMsg.copyWith(endpointId: peer.id),
-        ).catchError((e) {
-          debugPrint('Error enviando audio grupal a ${peer.name}: $e');
-        }),
+        _transport
+            .sendMessage(localMsg.copyWith(endpointId: peer.id))
+            .catchError((e) {
+              debugPrint('Error enviando audio grupal a ${peer.name}: $e');
+            }),
       );
     }
     return true;
@@ -544,13 +678,15 @@ class ChatController extends ChangeNotifier {
 
     for (final peer in connectedPeers) {
       unawaited(
-        _transport.sendEdit(
-          endpointId: peer.id,
-          targetMessageId: messageId,
-          newText: text,
-        ).catchError((e) {
-          debugPrint('Error enviando edición grupal a ${peer.name}: $e');
-        }),
+        _transport
+            .sendEdit(
+              endpointId: peer.id,
+              targetMessageId: messageId,
+              newText: text,
+            )
+            .catchError((e) {
+              debugPrint('Error enviando edición grupal a ${peer.name}: $e');
+            }),
       );
     }
     return true;
@@ -656,34 +792,44 @@ class ChatController extends ChangeNotifier {
 
   void _flushMailboxForPeer(String endpointId) {
     unawaited(
-      OfflineMailboxService.instance.flushPendingForPeer(
-        endpointId,
-        (message) async {
-          try {
-            await _transport.sendMessage(message);
-            final updated = message.copyWith(delivery: MessageDelivery.sent);
-            _replaceMessage(endpointId, updated);
-            return true;
-          } catch (e) {
-            debugPrint('Error enviando mensaje pendiente del buzón: $e');
-            return false;
-          }
-        },
-      ).then((sent) {
-        if (sent.isNotEmpty) {
-          notifyListeners();
-        }
-      }),
+      OfflineMailboxService.instance
+          .flushPendingForPeer(endpointId, (message) async {
+            try {
+              await _transport.sendMessage(message);
+              final updated = message.copyWith(delivery: MessageDelivery.sent);
+              _replaceMessage(endpointId, updated);
+              return true;
+            } catch (e) {
+              debugPrint('Error enviando mensaje pendiente del buzón: $e');
+              return false;
+            }
+          })
+          .then((sent) {
+            if (sent.isNotEmpty) {
+              notifyListeners();
+            }
+          }),
     );
   }
 
   Future<void> _processIncomingMessage(ChatMessage raw) async {
+    if (!_seenMessageIds.add(
+      '${raw.isGroup ? "group" : raw.endpointId}:${raw.id}',
+    )) {
+      return;
+    }
+    if (raw.isGroup && _seenMessageIds.contains(raw.id)) return;
     var message = raw;
     if (message.authorAvatar != null) {
-      UserProfileService.instance.setPeerAvatar(message.endpointId, message.authorAvatar);
+      UserProfileService.instance.setPeerAvatar(
+        message.endpointId,
+        message.authorAvatar,
+      );
       final existing = _peers[message.endpointId];
       if (existing != null && existing.avatarBase64 != message.authorAvatar) {
-        _peers[message.endpointId] = existing.copyWith(avatarBase64: message.authorAvatar);
+        _peers[message.endpointId] = existing.copyWith(
+          avatarBase64: message.authorAvatar,
+        );
       }
     }
     if (message.mediaBase64 != null && message.mediaPath == null) {
@@ -691,7 +837,8 @@ class ChatController extends ChangeNotifier {
         final bytes = base64Decode(message.mediaBase64!);
         final dir = await getTemporaryDirectory();
         final ext = message.type == ChatMessageType.image ? 'jpg' : 'm4a';
-        final file = File('${dir.path}/media_${message.id}.$ext');
+        final safeId = base64Url.encode(utf8.encode(message.id));
+        final file = File('${dir.path}/media_$safeId.$ext');
         await file.writeAsBytes(bytes);
         message = message.copyWith(mediaPath: file.path);
       } catch (e) {
@@ -701,11 +848,14 @@ class ChatController extends ChangeNotifier {
 
     if (message.isGroup) {
       // Loop prevention / deduplicación
-      if (!_seenMessageIds.add(message.id)) return;
+      _seenMessageIds.add(message.id);
 
-      final targetList =
-          _messages.putIfAbsent(ChatMessage.groupEndpointId, () => []);
+      final targetList = _messages.putIfAbsent(
+        ChatMessage.groupEndpointId,
+        () => [],
+      );
       targetList.add(message);
+      _notifyIncoming(message);
       notifyListeners();
 
       // Mesh Relay: Si no excede 5 saltos, retransmitir a los demás pares conectados
@@ -717,9 +867,10 @@ class ChatController extends ChangeNotifier {
               _transport
                   .sendMessage(relayed.copyWith(endpointId: peer.id))
                   .catchError((e) {
-                debugPrint(
-                    'Error retransmitiendo salto mesh a ${peer.name}: $e');
-              }),
+                    debugPrint(
+                      'Error retransmitiendo salto mesh a ${peer.name}: $e',
+                    );
+                  }),
             );
           }
         }
@@ -728,8 +879,18 @@ class ChatController extends ChangeNotifier {
     }
 
     _messages.putIfAbsent(message.endpointId, () => []).add(message);
-    _incomingMessageNotifications.add(message);
+    _notifyIncoming(message);
     notifyListeners();
+  }
+
+  void _notifyIncoming(ChatMessage message) {
+    if (_disposed) return;
+    final chat = ChatNotifications.chatId(message);
+    if (isChatVisible(chat)) {
+      unawaited(markChatAsRead(chat));
+    } else {
+      _incomingMessageNotifications.add(message);
+    }
   }
 
   void _processIncomingReadReceipt(MessageReadReceipt event) {
@@ -805,6 +966,9 @@ class ChatController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _saveTimer?.cancel();
+    unawaited(_persistHistory());
+    _disposed = true;
     unawaited(_subscription.cancel());
     unawaited(_transport.dispose());
     unawaited(_incomingMessageNotifications.close());

@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+
 import '../identity/user_identity_service.dart';
 
 /// Servicio de Perfil de Usuario y Fotos de Perfil (Avatares) estilo WhatsApp.
@@ -13,8 +15,10 @@ class UserProfileService {
   String _displayName = 'Android cercano';
   String? _localAvatarBase64;
   String? _localAvatarPath;
-  String _statusMessage = '¡Hola! Estoy usando BlueMesh.';
-  
+  String _statusMessage = '¡Hola! Estoy usando Trama.';
+  Future<void>? _loading;
+  Future<void> _saving = Future.value();
+
   // Cache de fotos de perfil de los contactos/pares de la malla
   final Map<String, String> _peerAvatars = {}; // endpointId -> avatarBase64
 
@@ -23,23 +27,32 @@ class UserProfileService {
   String? get localAvatarPath => _localAvatarPath;
   String get statusMessage => _statusMessage;
 
-  Future<void> loadProfile() async {
+  Future<void> loadProfile() => _loading ??= _loadProfile();
+
+  Future<void> _loadProfile() async {
     try {
       final dir = await getApplicationDocumentsDirectory();
       final file = File('${dir.path}/user_profile.json');
       if (await file.exists()) {
-        final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-        if (data['displayName'] is String && (data['displayName'] as String).isNotEmpty) {
+        final data =
+            jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+        if (data['displayName'] is String &&
+            (data['displayName'] as String).isNotEmpty) {
           _displayName = data['displayName'] as String;
         }
-        if (data['statusMessage'] is String && (data['statusMessage'] as String).isNotEmpty) {
+        if (data['statusMessage'] is String &&
+            (data['statusMessage'] as String).isNotEmpty) {
           _statusMessage = data['statusMessage'] as String;
         }
-        if (data['avatarBase64'] is String && (data['avatarBase64'] as String).isNotEmpty) {
+        if (data['avatarBase64'] is String &&
+            (data['avatarBase64'] as String).isNotEmpty) {
           _localAvatarBase64 = data['avatarBase64'] as String;
         }
-        if (data['deviceSecret'] is String && (data['deviceSecret'] as String).isNotEmpty) {
-          UserIdentityService.instance.setDeviceSecret(data['deviceSecret'] as String);
+        if (data['deviceSecret'] is String &&
+            (data['deviceSecret'] as String).isNotEmpty) {
+          UserIdentityService.instance.setDeviceSecret(
+            data['deviceSecret'] as String,
+          );
         } else {
           await _saveProfile();
         }
@@ -49,17 +62,22 @@ class UserProfileService {
     } catch (_) {}
   }
 
-  Future<void> _saveProfile() async {
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/user_profile.json');
-      await file.writeAsString(jsonEncode({
-        'displayName': _displayName,
-        'statusMessage': _statusMessage,
-        'avatarBase64': _localAvatarBase64,
-        'deviceSecret': UserIdentityService.instance.deviceSecret,
-      }));
-    } catch (_) {}
+  Future<void> _saveProfile() {
+    final snapshot = jsonEncode({
+      'displayName': _displayName,
+      'statusMessage': _statusMessage,
+      'avatarBase64': _localAvatarBase64,
+      'deviceSecret': UserIdentityService.instance.deviceSecret,
+    });
+    return _saving = _saving.then((_) async {
+      try {
+        final dir = await getApplicationDocumentsDirectory();
+        final file = File('${dir.path}/user_profile.json');
+        final temp = File('${file.path}.tmp');
+        await temp.writeAsString(snapshot, flush: true);
+        await temp.rename(file.path);
+      } catch (_) {}
+    });
   }
 
   void setDisplayName(String name) {

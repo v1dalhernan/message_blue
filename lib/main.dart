@@ -6,16 +6,23 @@ import 'src/nearby/demo_nearby_transport.dart';
 import 'src/nearby/lan_socket_transport.dart';
 import 'src/nearby/nearby_connections_transport.dart';
 import 'src/nearby/nearby_transport.dart';
+import 'src/nearby/mesh_transport.dart';
 import 'src/screens/home_page.dart';
+import 'src/screens/widgets/chat_visibility.dart';
 
 void main() {
   runApp(const BlueMeshApp());
 }
 
 class BlueMeshApp extends StatelessWidget {
-  const BlueMeshApp({super.key, this.transport});
+  const BlueMeshApp({
+    super.key,
+    this.transport,
+    this.enablePlatformServices = true,
+  });
 
   final NearbyTransport? transport;
+  final bool enablePlatformServices;
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +30,8 @@ class BlueMeshApp extends StatelessWidget {
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'BlueMesh',
+      title: 'Trama',
+      navigatorObservers: [chatRouteObserver],
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: seedColor,
@@ -40,7 +48,10 @@ class BlueMeshApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: HomePage(transport: transport ?? _defaultTransport()),
+      home: HomePage(
+        transport: transport ?? _defaultTransport(),
+        enablePlatformServices: enablePlatformServices,
+      ),
     );
   }
 
@@ -48,9 +59,11 @@ class BlueMeshApp extends StatelessWidget {
     const demoMode = bool.fromEnvironment('DEMO_MODE');
     if (demoMode) return DemoNearbyTransport();
 
-    const lanMode = bool.fromEnvironment('LAN_MODE', defaultValue: true);
-    if (lanMode || !Platform.isAndroid) return LanSocketTransport();
+    const lanMode = bool.fromEnvironment('LAN_MODE', defaultValue: false);
+    if (lanMode || !Platform.isAndroid) {
+      return MeshTransport(LanSocketTransport());
+    }
 
-    return NearbyConnectionsTransport();
+    return MeshTransport(NearbyConnectionsTransport());
   }
 }

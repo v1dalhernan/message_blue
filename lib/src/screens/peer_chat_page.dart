@@ -11,6 +11,7 @@ import 'package:record/record.dart';
 
 import '../chat_controller.dart';
 import '../models/chat_message.dart';
+import 'widgets/chat_visibility.dart';
 
 class PeerChatPage extends StatefulWidget {
   const PeerChatPage({
@@ -26,7 +27,12 @@ class PeerChatPage extends StatefulWidget {
   State<PeerChatPage> createState() => _PeerChatPageState();
 }
 
-class _PeerChatPageState extends State<PeerChatPage> {
+class _PeerChatPageState extends State<PeerChatPage>
+    with ChatVisibility<PeerChatPage> {
+  @override
+  ChatController get chatController => widget.controller;
+  @override
+  String get visibleChatId => widget.endpointId;
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
@@ -165,7 +171,9 @@ class _PeerChatPageState extends State<PeerChatPage> {
 
         if (widget.controller.getUnreadCount(widget.endpointId) > 0) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) widget.controller.markChatAsRead(widget.endpointId);
+            if (mounted && widget.controller.isChatVisible(widget.endpointId)) {
+              widget.controller.markChatAsRead(widget.endpointId);
+            }
           });
         }
 
@@ -175,8 +183,11 @@ class _PeerChatPageState extends State<PeerChatPage> {
             title: Row(
               children: [
                 _PeerAvatar(
-                  avatarBase64: peer?.avatarBase64 ??
-                      widget.controller.userProfileService.getPeerAvatar(widget.endpointId),
+                  avatarBase64:
+                      peer?.avatarBase64 ??
+                      widget.controller.userProfileService.getPeerAvatar(
+                        widget.endpointId,
+                      ),
                   name: peer?.name ?? 'Dispositivo',
                   radius: 18,
                 ),
@@ -196,14 +207,22 @@ class _PeerChatPageState extends State<PeerChatPage> {
                           if (peer?.uniqueId != null) ...[
                             const SizedBox(width: 6),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 1,
+                              ),
                               decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHighest,
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
                                 peer!.uniqueId!,
-                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ],
@@ -215,16 +234,23 @@ class _PeerChatPageState extends State<PeerChatPage> {
                           Icon(
                             isConnected ? Icons.lock : Icons.cloud_off,
                             size: 13,
-                            color: isConnected ? Colors.teal : Colors.amber.shade800,
+                            color: isConnected
+                                ? Colors.teal
+                                : Colors.amber.shade800,
                           ),
                           const SizedBox(width: 4),
                           Text(
                             isConnected
                                 ? 'Cifrado E2E · AES-256-GCM'
                                 : 'Fuera de línea · Buzón activo',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: isConnected ? Colors.teal : Colors.amber.shade800,
-                                  fontWeight: isConnected ? FontWeight.w500 : FontWeight.w600,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: isConnected
+                                      ? Colors.teal
+                                      : Colors.amber.shade800,
+                                  fontWeight: isConnected
+                                      ? FontWeight.w500
+                                      : FontWeight.w600,
                                 ),
                           ),
                         ],
@@ -239,8 +265,14 @@ class _PeerChatPageState extends State<PeerChatPage> {
             child: Column(
               children: [
                 Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFFF9E6),
                     borderRadius: BorderRadius.circular(10),
@@ -302,10 +334,7 @@ class _PeerChatPageState extends State<PeerChatPage> {
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({
-    required this.message,
-    required this.onEdit,
-  });
+  const _MessageBubble({required this.message, required this.onEdit});
 
   final ChatMessage message;
   final VoidCallback onEdit;
@@ -466,7 +495,9 @@ class _MessageBubble extends StatelessWidget {
                     Clipboard.setData(ClipboardData(text: message.text));
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Texto copiado al portapapeles')),
+                      const SnackBar(
+                        content: Text('Texto copiado al portapapeles'),
+                      ),
                     );
                   },
                 ),
@@ -502,10 +533,7 @@ class _ImageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     Widget imageWidget;
     if (message.mediaPath != null && File(message.mediaPath!).existsSync()) {
-      imageWidget = Image.file(
-        File(message.mediaPath!),
-        fit: BoxFit.cover,
-      );
+      imageWidget = Image.file(File(message.mediaPath!), fit: BoxFit.cover);
     } else if (message.mediaBase64 != null) {
       imageWidget = Image.memory(
         base64Decode(message.mediaBase64!),
@@ -636,7 +664,9 @@ class _AudioBubbleState extends State<_AudioBubble> {
             SizedBox(
               width: 140,
               child: LinearProgressIndicator(
-                value: totalSeconds > 0 ? (currentSeconds / totalSeconds).clamp(0.0, 1.0) : 0.0,
+                value: totalSeconds > 0
+                    ? (currentSeconds / totalSeconds).clamp(0.0, 1.0)
+                    : 0.0,
                 backgroundColor: colors.outlineVariant,
               ),
             ),
@@ -731,9 +761,9 @@ class _ComposerState extends State<_Composer> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al iniciar grabación: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al iniciar grabación: $e')));
     }
   }
 
@@ -757,9 +787,9 @@ class _ComposerState extends State<_Composer> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al detener grabación: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al detener grabación: $e')));
     }
   }
 
@@ -822,15 +852,25 @@ class _ComposerState extends State<_Composer> {
                     children: [
                       IconButton(
                         tooltip: 'Cancelar grabación',
-                        icon: const Icon(Icons.delete_outline, color: Colors.red),
+                        icon: const Icon(
+                          Icons.delete_outline,
+                          color: Colors.red,
+                        ),
                         onPressed: _cancelRecording,
                       ),
                       const SizedBox(width: 8),
-                      const Icon(Icons.fiber_manual_record, color: Colors.red, size: 16),
+                      const Icon(
+                        Icons.fiber_manual_record,
+                        color: Colors.red,
+                        size: 16,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         'Grabando: ${_recordSeconds}s',
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red,
+                        ),
                       ),
                       const Spacer(),
                       IconButton.filled(
@@ -846,12 +886,16 @@ class _ComposerState extends State<_Composer> {
                       IconButton(
                         tooltip: 'Adjuntar imagen',
                         icon: const Icon(Icons.photo_camera_outlined),
-                        onPressed: (widget.enabled && widget.isConnected) ? widget.onPickImage : null,
+                        onPressed: (widget.enabled && widget.isConnected)
+                            ? widget.onPickImage
+                            : null,
                       ),
                       IconButton(
                         tooltip: 'Grabar nota de voz',
                         icon: const Icon(Icons.mic_none_outlined),
-                        onPressed: (widget.enabled && widget.isConnected) ? _startRecording : null,
+                        onPressed: (widget.enabled && widget.isConnected)
+                            ? _startRecording
+                            : null,
                       ),
                       Expanded(
                         child: TextField(
@@ -865,22 +909,30 @@ class _ComposerState extends State<_Composer> {
                             hintText: widget.editingMessage != null
                                 ? 'Edita tu mensaje...'
                                 : (widget.isConnected
-                                    ? 'Escribe un mensaje...'
-                                    : 'Escribe un mensaje (buzón offline)...'),
+                                      ? 'Escribe un mensaje...'
+                                      : 'Escribe un mensaje (buzón offline)...'),
                             counterText: '',
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 14,
                               vertical: 10,
                             ),
                           ),
-                          onSubmitted: widget.enabled ? (_) => widget.onSend() : null,
+                          onSubmitted: widget.enabled
+                              ? (_) => widget.onSend()
+                              : null,
                         ),
                       ),
                       const SizedBox(width: 6),
                       IconButton.filled(
-                        tooltip: widget.editingMessage != null ? 'Guardar' : 'Enviar',
+                        tooltip: widget.editingMessage != null
+                            ? 'Guardar'
+                            : 'Enviar',
                         onPressed: widget.enabled ? widget.onSend : null,
-                        icon: Icon(widget.editingMessage != null ? Icons.check : Icons.send),
+                        icon: Icon(
+                          widget.editingMessage != null
+                              ? Icons.check
+                              : Icons.send,
+                        ),
                       ),
                     ],
                   ),
@@ -916,11 +968,7 @@ class _EmptyConversation extends StatelessWidget {
 }
 
 class _PeerAvatar extends StatelessWidget {
-  const _PeerAvatar({
-    this.avatarBase64,
-    required this.name,
-    this.radius = 18,
-  });
+  const _PeerAvatar({this.avatarBase64, required this.name, this.radius = 18});
 
   final String? avatarBase64;
   final String name;

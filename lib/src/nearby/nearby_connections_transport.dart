@@ -9,6 +9,8 @@ import 'package:nearby_connections/nearby_connections.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../models/chat_message.dart';
+import '../core/identity/user_identity_service.dart';
+import 'payload_chunks.dart';
 import 'nearby_event.dart';
 import 'nearby_transport.dart';
 import 'secure_session.dart';
@@ -23,6 +25,10 @@ class NearbyConnectionsTransport implements NearbyTransport {
   final Map<String, Future<SecureSession>> _sessions = {};
   final Set<String> _keyExchangeSent = {};
   final Set<String> _secureEndpoints = {};
+  final Map<String, String> _enteredCodes = {};
+  final Set<String> _awaitingPin = {};
+  final Map<String, Future<void>> _receiveQueues = {};
+  final PayloadChunks _chunks = PayloadChunks();
 
   bool _started = false;
 
@@ -127,8 +133,11 @@ class NearbyConnectionsTransport implements NearbyTransport {
     String? enteredCode,
   }) async {
     try {
+      if (enteredCode != null) _enteredCodes[endpointId] = enteredCode;
       final requested = await _nearby.requestConnection(
-        displayName,
+        enteredCode == null
+            ? displayName
+            : jsonEncode({'name': displayName, 'pinRequired': true}),
         endpointId,
         onConnectionInitiated: _onConnectionInitiated,
         onConnectionResult: _onConnectionResult,
@@ -146,10 +155,20 @@ class NearbyConnectionsTransport implements NearbyTransport {
   }
 
   void _onConnectionInitiated(String endpointId, ConnectionInfo info) {
+    var name = info.endpointName;
+    try {
+      final metadata = jsonDecode(name);
+      if (metadata is Map<String, dynamic> &&
+          metadata['pinRequired'] == true &&
+          info.isIncomingConnection) {
+        _awaitingPin.add(endpointId);
+        name = metadata['name'] as String;
+      }
+    } catch (_) {}
     _events.add(
       ConnectionApprovalRequired(
         endpointId: endpointId,
-        name: info.endpointName,
+        name: name,
         authenticationToken: info.authenticationToken,
         isIncoming: info.isIncomingConnection,
       ),
@@ -194,7 +213,17 @@ class NearbyConnectionsTransport implements NearbyTransport {
   void _onPayloadReceived(String endpointId, Payload payload) {
     if (payload.type != PayloadType.BYTES || payload.bytes == null) return;
 
-    unawaited(_handleBytesPayload(endpointId, payload.bytes!));
+    _receiveQueues[endpointId] = (_receiveQueues[endpointId] ?? Future.value())
+        .then((_) async {
+          final bytes = _chunks.receive(endpointId, payload.bytes!);
+          if (bytes != null) {
+            await _handleBytesPayload(endpointId, Uint8List.fromList(bytes));
+          }
+        })
+        .catchError(
+          (Object error) =>
+              _events.add(NearbyFailure('Paquete inválido: $error')),
+        );
   }
 
   Future<void> _handleBytesPayload(String endpointId, Uint8List bytes) async {
@@ -205,7 +234,16 @@ class NearbyConnectionsTransport implements NearbyTransport {
         final session = await _sessionFor(endpointId);
         await session.establish(SecureSession.keyFromPayload(decoded));
         await _sendKeyExchange(endpointId);
-        if (_secureEndpoints.add(endpointId)) {
+        final pin = _enteredCodes[endpointId];
+        if (pin != null) {
+          await _sendBytes(
+            endpointId,
+            await session.encrypt(
+              utf8.encode(jsonEncode({'type': 'pairing_pin', 'pin': pin})),
+            ),
+          );
+        } else if (!_awaitingPin.contains(endpointId) &&
+            _secureEndpoints.add(endpointId)) {
           _events.add(SecureChannelReady(endpointId));
         }
         return;
@@ -214,7 +252,50 @@ class NearbyConnectionsTransport implements NearbyTransport {
       final session = await _sessionFor(endpointId);
       final clearText = await session.decrypt(bytes);
       final jsonPayload = jsonDecode(utf8.decode(clearText));
-      if (jsonPayload is Map<String, dynamic> && jsonPayload['type'] == 'edit') {
+      if (jsonPayload is Map<String, dynamic> &&
+          jsonPayload['type'] == 'pairing_pin' &&
+          _awaitingPin.remove(endpointId)) {
+        final valid = UserIdentityService.instance.isValidPin(
+          jsonPayload['pin'] as String,
+        );
+        await _sendBytes(
+          endpointId,
+          await session.encrypt(
+            utf8.encode(
+              jsonEncode({'type': 'pairing_result', 'accepted': valid}),
+            ),
+          ),
+        );
+        if (valid) {
+          if (_secureEndpoints.add(endpointId)) {
+            _events.add(SecureChannelReady(endpointId));
+          }
+        } else {
+          _events.add(const NearbyFailure('PIN incorrecto o caducado.'));
+          await disconnect(endpointId);
+        }
+        return;
+      }
+      if (jsonPayload is Map<String, dynamic> &&
+          jsonPayload['type'] == 'pairing_result' &&
+          _enteredCodes.remove(endpointId) != null) {
+        if (jsonPayload['accepted'] == true) {
+          if (_secureEndpoints.add(endpointId)) {
+            _events.add(SecureChannelReady(endpointId));
+          }
+        } else {
+          _events.add(
+            const NearbyFailure(
+              'El destinatario rechazó el PIN. Introduce su código actual.',
+            ),
+          );
+          await disconnect(endpointId);
+        }
+        return;
+      }
+      if (!_secureEndpoints.contains(endpointId)) return;
+      if (jsonPayload is Map<String, dynamic> &&
+          jsonPayload['type'] == 'edit') {
         final edit = ChatMessageEdit.fromJson(jsonPayload);
         _events.add(
           MessageEdited(
@@ -226,11 +307,23 @@ class NearbyConnectionsTransport implements NearbyTransport {
         );
         return;
       }
-      if (jsonPayload is Map<String, dynamic> && jsonPayload['type'] == 'read_receipt') {
+      if (jsonPayload is Map<String, dynamic> &&
+          jsonPayload['type'] == 'read_receipt') {
         _events.add(
           MessageReadReceipt(
             endpointId: endpointId,
             messageId: jsonPayload['messageId'] as String,
+          ),
+        );
+        return;
+      }
+      if (jsonPayload is Map<String, dynamic> &&
+          jsonPayload['type'] == 'profile_update') {
+        _events.add(
+          PeerUpdated(
+            endpointId: endpointId,
+            name: jsonPayload['name'] as String?,
+            avatar: jsonPayload['avatar'] as String?,
           ),
         );
         return;
@@ -278,6 +371,9 @@ class NearbyConnectionsTransport implements NearbyTransport {
   }
 
   void _clearSecureSession(String endpointId) {
+    _enteredCodes.remove(endpointId);
+    _awaitingPin.remove(endpointId);
+    _chunks.clear(endpointId);
     _keyExchangeSent.remove(endpointId);
     _secureEndpoints.remove(endpointId);
     final session = _sessions.remove(endpointId);
@@ -320,10 +416,7 @@ class NearbyConnectionsTransport implements NearbyTransport {
       editedAt: DateTime.now(),
     );
     final encrypted = await session.encrypt(edit.toPayload());
-    await _nearby.sendBytesPayload(
-      endpointId,
-      Uint8List.fromList(encrypted),
-    );
+    await _sendBytes(endpointId, encrypted);
   }
 
   @override
@@ -335,15 +428,28 @@ class NearbyConnectionsTransport implements NearbyTransport {
       'messageId': messageId,
     });
     final encrypted = await session.encrypt(utf8.encode(payload));
-    await _nearby.sendBytesPayload(
-      endpointId,
-      Uint8List.fromList(encrypted),
-    );
+    await _sendBytes(endpointId, encrypted);
   }
 
   @override
   Future<void> sendProfileUpdate({String? name, String? avatar}) async {
-    // NearbyConnections P2P profile broadcast
+    final payload = jsonEncode({
+      'type': 'profile_update',
+      if (name != null) 'name': name,
+      if (avatar != null) 'avatar': avatar,
+    });
+    final payloadBytes = utf8.encode(payload);
+    for (final endpointId in _secureEndpoints) {
+      try {
+        final session = await _sessionFor(endpointId);
+        if (session.isReady) {
+          final encrypted = await session.encrypt(payloadBytes);
+          await _sendBytes(endpointId, encrypted);
+        }
+      } catch (_) {
+        // Peer may be disconnecting
+      }
+    }
   }
 
   Future<void> _sendEncryptedMessage(ChatMessage message) async {
@@ -354,10 +460,13 @@ class NearbyConnectionsTransport implements NearbyTransport {
       );
     }
     final encrypted = await session.encrypt(message.toPayload());
-    await _nearby.sendBytesPayload(
-      message.endpointId,
-      Uint8List.fromList(encrypted),
-    );
+    await _sendBytes(message.endpointId, encrypted);
+  }
+
+  Future<void> _sendBytes(String endpointId, List<int> bytes) async {
+    for (final part in _chunks.split(bytes)) {
+      await _nearby.sendBytesPayload(endpointId, Uint8List.fromList(part));
+    }
   }
 
   @override

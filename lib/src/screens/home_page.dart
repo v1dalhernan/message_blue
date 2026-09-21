@@ -9,6 +9,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../chat_controller.dart';
 import '../core/profile/user_profile_service.dart';
+import '../core/notifications/chat_notifications.dart';
 import '../models/chat_message.dart';
 import '../models/nearby_peer.dart';
 import '../nearby/nearby_transport.dart';
@@ -16,114 +17,106 @@ import 'mesh_group_chat_page.dart';
 import 'peer_chat_page.dart';
 import 'widgets/totp_pin_widget.dart';
 
-const bool kEnterpriseMode = bool.fromEnvironment('ENTERPRISE', defaultValue: false);
+const bool kEnterpriseMode = bool.fromEnvironment(
+  'ENTERPRISE',
+  defaultValue: false,
+);
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.transport});
+  const HomePage({
+    super.key,
+    required this.transport,
+    this.enablePlatformServices = true,
+  });
 
   final NearbyTransport transport;
+  final bool enablePlatformServices;
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   late final ChatController _controller;
   late final TextEditingController _nameController;
   StreamSubscription<ChatMessage>? _msgSub;
-  StreamSubscription<String>? _peerConnSub;
+  final ChatNotifications _notifications = ChatNotifications();
 
   @override
   void initState() {
     super.initState();
-    _controller = ChatController(widget.transport);
+    WidgetsBinding.instance.addObserver(this);
+    _controller = ChatController(
+      widget.transport,
+      persistHistory: widget.enablePlatformServices,
+    );
     _nameController = TextEditingController(text: 'Android cercano');
     _initProfile();
 
+    _notifications.onOpenChat = (chat) {
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => chat == ChatMessage.groupEndpointId
+              ? MeshGroupChatPage(controller: _controller)
+              : PeerChatPage(controller: _controller, endpointId: chat),
+        ),
+      );
+    };
     _msgSub = _controller.incomingMessageNotifications.listen((msg) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          content: Row(
-            children: [
-              UserAvatarWidget(
-                avatarBase64: msg.authorAvatar ??
-                    _controller.userProfileService.getPeerAvatar(msg.endpointId),
-                name: msg.author,
-                radius: 18,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      msg.author,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      msg.type == ChatMessageType.text
-                          ? msg.text
-                          : (msg.type == ChatMessageType.image
-                              ? '📷 Foto'
-                              : '🎤 Nota de voz'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          action: SnackBarAction(
-            label: 'Abrir',
-            textColor: Colors.amberAccent,
-            onPressed: () {
-              final peer = _controller.peerById(msg.endpointId);
-              if (peer != null && mounted) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => PeerChatPage(
-                      controller: _controller,
-                      endpointId: peer.id,
-                    ),
-                  ),
-                );
-              }
-            },
-          ),
-          duration: const Duration(seconds: 4),
-        ),
+      if (!widget.enablePlatformServices) return;
+      unawaited(
+        _notifications
+            .show(
+              msg,
+              shouldShow: () =>
+                  mounted &&
+                  !_controller.isChatVisible(ChatNotifications.chatId(msg)),
+            )
+            .catchError((Object error) => debugPrint('Notificación: $error')),
       );
     });
+    _controller.addListener(_clearReadNotifications);
+    if (widget.enablePlatformServices) {
+      unawaited(
+        _notifications.initialize().catchError(
+          (Object error) => debugPrint('Notificaciones: $error'),
+        ),
+      );
+    }
+  }
 
-    _peerConnSub = _controller.peerConnectionNotifications.listen((name) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          content: Row(
-            children: [
-              const Icon(Icons.check_circle_outline, color: Colors.greenAccent),
-              const SizedBox(width: 10),
-              Expanded(child: Text('$name se ha conectado a tu red local.')),
-            ],
-          ),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    });
+  void _clearReadNotifications() {
+    if (!widget.enablePlatformServices) return;
+    for (final chat in [
+      ChatMessage.groupEndpointId,
+      ..._controller.peers.map((p) => p.id),
+    ]) {
+      if (_controller.isChatVisible(chat)) {
+        unawaited(
+          _notifications
+              .cancel(chat)
+              .catchError((Object error) => debugPrint('Notificación: $error')),
+        );
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _controller.setForeground(state == AppLifecycleState.resumed);
   }
 
   Future<void> _initProfile() async {
-    await UserProfileService.instance.loadProfile();
+    if (!widget.enablePlatformServices) return;
+    await _controller.initialize();
+    if (!mounted) return;
+    unawaited(
+      _notifications.requestPermission().catchError(
+        (Object error) => debugPrint('Permiso de notificaciones: $error'),
+      ),
+    );
     final savedName = UserProfileService.instance.displayName;
     if (savedName.isNotEmpty && savedName != 'Android cercano' && mounted) {
       _nameController.text = savedName;
@@ -133,7 +126,9 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _msgSub?.cancel();
-    _peerConnSub?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _notifications.onOpenChat = null;
+    _controller.removeListener(_clearReadNotifications);
     _nameController.dispose();
     _controller.dispose();
     super.dispose();
@@ -151,7 +146,7 @@ class _HomePageState extends State<HomePage> {
               children: [
                 Icon(Icons.hub_outlined),
                 SizedBox(width: 10),
-                Text('BlueMesh'),
+                Text('Trama'),
               ],
             ),
             actions: [
@@ -369,7 +364,10 @@ class _NetworkBody extends StatelessWidget {
                             ),
                             const SizedBox(width: 8),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: colors.primary.withAlpha(40),
                                 borderRadius: BorderRadius.circular(6),
@@ -399,29 +397,44 @@ class _NetworkBody extends StatelessWidget {
               const SizedBox(height: 12),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: colors.surface.withAlpha(200),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: colors.outlineVariant.withAlpha(100)),
+                  border: Border.all(
+                    color: colors.outlineVariant.withAlpha(100),
+                  ),
                 ),
                 child: const TotpPinWidget(compact: true),
               ),
               if (controller.offlineMailboxCount > 0) ...[
                 const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.amber.withAlpha(40),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.mark_email_unread_outlined, size: 16, color: Colors.amber),
+                      const Icon(
+                        Icons.mark_email_unread_outlined,
+                        size: 16,
+                        color: Colors.amber,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         '${controller.offlineMailboxCount} mensaje(s) en buzón esperando entrega',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ],
                   ),
@@ -490,7 +503,8 @@ class _PeerCard extends StatelessWidget {
             Row(
               children: [
                 UserAvatarWidget(
-                  avatarBase64: peer.avatarBase64 ??
+                  avatarBase64:
+                      peer.avatarBase64 ??
                       controller.userProfileService.getPeerAvatar(peer.id),
                   name: peer.name,
                   radius: 22,
@@ -513,21 +527,30 @@ class _PeerCard extends StatelessWidget {
                           if (peer.uniqueId != null) ...[
                             const SizedBox(width: 6),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 1,
+                              ),
                               decoration: BoxDecoration(
                                 color: colors.surfaceContainerHighest,
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
                                 peer.uniqueId!,
-                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ],
                           if (unreadCount > 0) ...[
                             const SizedBox(width: 8),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: const Color(0xFF25D366),
                                 borderRadius: BorderRadius.circular(10),
@@ -553,7 +576,8 @@ class _PeerCard extends StatelessWidget {
                     peer.status == PeerConnectionStatus.failed ||
                     peer.status == PeerConnectionStatus.rejected)
                   FilledButton.tonal(
-                    onPressed: () => _showPinConnectionDialog(context, controller, peer),
+                    onPressed: () =>
+                        _showPinConnectionDialog(context, controller, peer),
                     child: const Text('Conectar'),
                   ),
               ],
@@ -568,7 +592,11 @@ class _PeerCard extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.warning_amber_rounded, color: colors.onErrorContainer, size: 20),
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: colors.onErrorContainer,
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -626,7 +654,8 @@ class _PeerCard extends StatelessWidget {
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: QrImageView(
-                              data: '{"proto":"bluemesh-qr-v1","id":"${peer.id}","pin":"${peer.authenticationToken}"}',
+                              data:
+                                  '{"proto":"bluemesh-qr-v1","id":"${peer.id}","pin":"${peer.authenticationToken}"}',
                               version: QrVersions.auto,
                               size: 72.0,
                             ),
@@ -642,7 +671,11 @@ class _PeerCard extends StatelessWidget {
                             tooltip: 'Escanear QR',
                             icon: const Icon(Icons.qr_code_scanner, size: 20),
                             onPressed: () {
-                              _showQrScannerDialog(context, peer.id, peer.authenticationToken);
+                              _showQrScannerDialog(
+                                context,
+                                peer.id,
+                                peer.authenticationToken,
+                              );
                             },
                           ),
                         const Spacer(),
@@ -713,7 +746,11 @@ class _PeerCard extends StatelessWidget {
     };
   }
 
-  void _showQrScannerDialog(BuildContext context, String peerId, String? expectedPin) {
+  void _showQrScannerDialog(
+    BuildContext context,
+    String peerId,
+    String? expectedPin,
+  ) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -732,11 +769,20 @@ class _PeerCard extends StatelessWidget {
             child: MobileScanner(
               onDetect: (capture) {
                 final barcode = capture.barcodes.firstOrNull;
-                if (barcode?.rawValue != null) {
+                Map<String, dynamic>? payload;
+                try {
+                  final value = jsonDecode(barcode?.rawValue ?? '');
+                  if (value is Map<String, dynamic>) payload = value;
+                } catch (_) {}
+                if (expectedPin != null &&
+                    payload?['proto'] == 'bluemesh-qr-v1' &&
+                    payload?['pin'] == expectedPin) {
                   Navigator.pop(ctx);
                   controller.approve(peerId);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('✓ Código QR validado con éxito')),
+                    const SnackBar(
+                      content: Text('✓ Código QR validado con éxito'),
+                    ),
                   );
                 }
               },
@@ -771,7 +817,7 @@ class _EmptyPeers extends StatelessWidget {
           const Icon(Icons.wifi_find, size: 42),
           const SizedBox(height: 12),
           Text(
-            'Buscando otra instancia de BlueMesh…',
+            'Buscando otra instancia de Trama…',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleMedium,
           ),
@@ -915,20 +961,18 @@ class _MeshGroupCard extends StatelessWidget {
                     children: [
                       Text(
                         'Sala Mezclada (Red Mesh)',
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
                       ),
                       Text(
                         isEnabled
                             ? '$count nodo${count > 1 ? 's' : ''} conectado${count > 1 ? 's' : ''} en la red local'
                             : 'Conecta al menos un dispositivo para entrar',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: isEnabled
-                                  ? colors.primary
-                                  : colors.onSurfaceVariant,
-                            ),
+                          color: isEnabled
+                              ? colors.primary
+                              : colors.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -1065,13 +1109,16 @@ void _showPinConnectionDialog(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Ingresa el código 2FA temporal que aparece en la pantalla de ${peer.name}:',
+            'Ingresa el PIN temporal que aparece en la pantalla de ${peer.name}:',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 4),
           Text(
             'El código rota cada 30s. Si recién cambió, el código previo aún es válido.',
-            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 14),
           TextField(
@@ -1097,8 +1144,8 @@ void _showPinConnectionDialog(
           Text(
             'Al escribir el código correcto, la conexión se establecerá y verificará automáticamente.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -1111,7 +1158,10 @@ void _showPinConnectionDialog(
           onPressed: () {
             final code = pinController.text.trim();
             Navigator.pop(ctx);
-            controller.connect(peer.id, enteredCode: code.isNotEmpty ? code : null);
+            controller.connect(
+              peer.id,
+              enteredCode: code.isNotEmpty ? code : null,
+            );
           },
           child: const Text('Conectar'),
         ),
@@ -1120,7 +1170,10 @@ void _showPinConnectionDialog(
   );
 }
 
-void _showAvatarSelectionSheet(BuildContext context, ChatController controller) {
+void _showAvatarSelectionSheet(
+  BuildContext context,
+  ChatController controller,
+) {
   showModalBottomSheet(
     context: context,
     shape: const RoundedRectangleBorder(
@@ -1134,15 +1187,16 @@ void _showAvatarSelectionSheet(BuildContext context, ChatController controller) 
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Foto de perfil en BlueMesh',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              'Foto de perfil en Trama',
+              style: Theme.of(context).textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 6),
             Text(
               'Tu foto se transmitirá de forma liviana a los dispositivos cercanos en la red.',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 18),
             Row(
@@ -1191,7 +1245,8 @@ void _showAvatarSelectionSheet(BuildContext context, ChatController controller) 
             const SizedBox(height: 8),
             Text(
               'O selecciona un avatar rápido:',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
             Row(
@@ -1272,9 +1327,8 @@ void _showProfileSheet(BuildContext context, ChatController controller) {
                     children: [
                       Text(
                         'Mi Perfil',
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                       IconButton(
                         icon: const Icon(Icons.close),
@@ -1302,7 +1356,11 @@ void _showProfileSheet(BuildContext context, ChatController controller) {
                           child: CircleAvatar(
                             radius: 16,
                             backgroundColor: colors.primary,
-                            child: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                            child: const Icon(
+                              Icons.camera_alt,
+                              size: 16,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ],
@@ -1314,10 +1372,16 @@ void _showProfileSheet(BuildContext context, ChatController controller) {
                     color: colors.surfaceContainerLow,
                     child: ListTile(
                       leading: const Icon(Icons.person_outline),
-                      title: const Text('Nombre', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      title: const Text(
+                        'Nombre',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
                       subtitle: Text(
                         controller.displayName,
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       trailing: IconButton(
                         icon: const Icon(Icons.edit_outlined, size: 20),
@@ -1333,7 +1397,10 @@ void _showProfileSheet(BuildContext context, ChatController controller) {
                     color: colors.surfaceContainerLow,
                     child: ListTile(
                       leading: const Icon(Icons.info_outline),
-                      title: const Text('Info. actual', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      title: const Text(
+                        'Info. actual',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
                       subtitle: Text(
                         controller.statusMessage,
                         style: const TextStyle(fontSize: 15),
@@ -1351,14 +1418,23 @@ void _showProfileSheet(BuildContext context, ChatController controller) {
                     elevation: 0,
                     color: colors.surfaceContainerLow,
                     child: ListTile(
-                      leading: const Icon(Icons.verified_user_outlined, color: Colors.teal),
-                      title: const Text('Identidad Criptográfica', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      leading: const Icon(
+                        Icons.verified_user_outlined,
+                        color: Colors.teal,
+                      ),
+                      title: const Text(
+                        'Identidad Criptográfica',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             controller.localUniqueId,
-                            style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.2,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           const Text(
@@ -1392,12 +1468,15 @@ void _showEditNameDialog(BuildContext context, ChatController controller) {
         maxLength: 24,
         autofocus: true,
         decoration: const InputDecoration(
-          labelText: 'Tu nombre en BlueMesh',
+          labelText: 'Tu nombre en Trama',
           counterText: '',
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancelar'),
+        ),
         FilledButton(
           onPressed: () {
             final newName = nameCtrl.text.trim();
@@ -1416,7 +1495,7 @@ void _showEditNameDialog(BuildContext context, ChatController controller) {
 void _showEditStatusDialog(BuildContext context, ChatController controller) {
   final statusCtrl = TextEditingController(text: controller.statusMessage);
   final suggestions = [
-    '¡Hola! Estoy usando BlueMesh.',
+    '¡Hola! Estoy usando Trama.',
     'Disponible',
     'En una reunión',
     'En el trabajo',
@@ -1435,12 +1514,13 @@ void _showEditStatusDialog(BuildContext context, ChatController controller) {
             controller: statusCtrl,
             maxLength: 60,
             autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Estado o bio',
-            ),
+            decoration: const InputDecoration(labelText: 'Estado o bio'),
           ),
           const SizedBox(height: 12),
-          const Text('Sugerencias:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          const Text(
+            'Sugerencias:',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 6),
           Wrap(
             spacing: 6,
@@ -1457,7 +1537,10 @@ void _showEditStatusDialog(BuildContext context, ChatController controller) {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancelar'),
+        ),
         FilledButton(
           onPressed: () {
             final newStatus = statusCtrl.text.trim();
@@ -1472,4 +1555,3 @@ void _showEditStatusDialog(BuildContext context, ChatController controller) {
     ),
   );
 }
-

@@ -23,8 +23,10 @@ class SecureSession {
 
   bool get isReady => _sessionKey != null && !_disposed;
 
-  static Future<SecureSession> create() async {
-    final keyPair = await _keyExchange.newKeyPair();
+  static Future<SecureSession> create({List<int>? seed}) async {
+    final keyPair = seed == null
+        ? await _keyExchange.newKeyPair()
+        : await _keyExchange.newKeyPairFromSeed(seed);
     final publicKey = await keyPair.extractPublicKey();
     return SecureSession._(keyPair, List.unmodifiable(publicKey.bytes));
   }
@@ -124,15 +126,21 @@ class SecureSession {
 
   Future<String> deriveSixDigitPin(List<int> remotePublicKeyBytes) async {
     final key = _requireSessionKey();
-    final orderedKeys = _lexicographicCompare(publicKeyBytes, remotePublicKeyBytes) <= 0
+    final orderedKeys =
+        _lexicographicCompare(publicKeyBytes, remotePublicKeyBytes) <= 0
         ? [...publicKeyBytes, ...remotePublicKeyBytes]
         : [...remotePublicKeyBytes, ...publicKeyBytes];
 
     final keyBytes = await key.extractBytes();
-    final combined = [...orderedKeys, ...keyBytes, ...utf8.encode('pin-verification-v2')];
+    final combined = [
+      ...orderedKeys,
+      ...keyBytes,
+      ...utf8.encode('pin-verification-v2'),
+    ];
     final digest = await Sha256().hash(combined);
 
-    final intVal = ((digest.bytes[0] & 0x7F) << 24) |
+    final intVal =
+        ((digest.bytes[0] & 0x7F) << 24) |
         (digest.bytes[1] << 16) |
         (digest.bytes[2] << 8) |
         digest.bytes[3];

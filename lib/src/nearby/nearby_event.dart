@@ -93,10 +93,7 @@ class MessageEdited extends NearbyEvent {
 }
 
 class MessageReadReceipt extends NearbyEvent {
-  const MessageReadReceipt({
-    required this.endpointId,
-    required this.messageId,
-  });
+  const MessageReadReceipt({required this.endpointId, required this.messageId});
 
   final String endpointId;
   final String messageId;
@@ -107,4 +104,3 @@ class NearbyFailure extends NearbyEvent {
 
   final String message;
 }
-

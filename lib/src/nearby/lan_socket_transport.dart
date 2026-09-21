@@ -52,8 +52,11 @@ class LanSocketTransport implements NearbyTransport {
     _localId = 'lan-${DateTime.now().microsecondsSinceEpoch % 1000000}';
 
     try {
-      _socket = await Socket.connect(_targetHost, port,
-          timeout: const Duration(seconds: 4));
+      _socket = await Socket.connect(
+        _targetHost,
+        port,
+        timeout: const Duration(seconds: 4),
+      );
     } catch (e) {
       throw NearbySetupException(
         'No se pudo conectar al LAN Dev Hub en $_targetHost:$port.\n'
@@ -75,9 +78,10 @@ class LanSocketTransport implements NearbyTransport {
           },
         );
 
-    final uniqueId = await UserIdentityService.instance.getUniqueId(displayName);
+    final uniqueId = await UserIdentityService.instance.getUniqueId(
+      displayName,
+    );
     final avatar = UserProfileService.instance.localAvatarBase64;
-    final pin = UserIdentityService.instance.getPersonalPin(displayName);
 
     _sendFrame({
       'action': 'register',
@@ -85,7 +89,6 @@ class LanSocketTransport implements NearbyTransport {
       'name': displayName,
       'uniqueId': uniqueId,
       'avatar': avatar,
-      'pin': pin,
     });
   }
 
@@ -159,7 +162,8 @@ class LanSocketTransport implements NearbyTransport {
           _peerNames[from] = fromName;
 
           // Si el solicitante escribió el código 2FA dinámico de este usuario, conectar de inmediato
-          if (enteredCode != null && UserIdentityService.instance.isValidPin(enteredCode.trim())) {
+          if (enteredCode != null &&
+              UserIdentityService.instance.isValidPin(enteredCode.trim())) {
             _sendFrame({
               'action': 'connect_response',
               'from': _localId,
@@ -173,6 +177,13 @@ class LanSocketTransport implements NearbyTransport {
               ),
             );
             unawaited(_sendKeyExchange(from).catchError(_emitSecureError));
+          } else if (enteredCode != null) {
+            unawaited(rejectConnection(from));
+            _events.add(
+              const NearbyFailure(
+                'PIN incorrecto o caducado. Solicita el código actual.',
+              ),
+            );
           } else {
             _events.add(
               ConnectionApprovalRequired(
@@ -219,6 +230,23 @@ class LanSocketTransport implements NearbyTransport {
               outcome: ConnectionOutcome.disconnected,
             ),
           );
+
+        case 'peer_updated':
+          final from = msg['endpointId'] as String;
+          final name = msg['name'] as String?;
+          final avatar = msg['avatar'] as String?;
+          final uniqueId = msg['uniqueId'] as String?;
+          if (name != null) {
+            _peerNames[from] = name;
+          }
+          _events.add(
+            PeerUpdated(
+              endpointId: from,
+              name: name,
+              avatar: avatar,
+              uniqueId: uniqueId,
+            ),
+          );
       }
     } catch (e) {
       _events.add(NearbyFailure('Error procesando mensaje: $e'));
@@ -243,7 +271,8 @@ class LanSocketTransport implements NearbyTransport {
       final clearText = await session.decrypt(bytes);
       final jsonPayload = jsonDecode(utf8.decode(clearText));
 
-      if (jsonPayload is Map<String, dynamic> && jsonPayload['type'] == 'edit') {
+      if (jsonPayload is Map<String, dynamic> &&
+          jsonPayload['type'] == 'edit') {
         final edit = ChatMessageEdit.fromJson(jsonPayload);
         _events.add(
           MessageEdited(
@@ -256,7 +285,8 @@ class LanSocketTransport implements NearbyTransport {
         return;
       }
 
-      if (jsonPayload is Map<String, dynamic> && jsonPayload['type'] == 'read_receipt') {
+      if (jsonPayload is Map<String, dynamic> &&
+          jsonPayload['type'] == 'read_receipt') {
         _events.add(
           MessageReadReceipt(
             endpointId: endpointId,
@@ -292,8 +322,8 @@ class LanSocketTransport implements NearbyTransport {
     String displayName, {
     String? enteredCode,
   }) async {
-    final token = enteredCode ??
-        '${(endpointId.hashCode.abs() % 900000 + 100000)}'; // Token visual de 6 dígitos
+    final token =
+        enteredCode ?? '${(endpointId.hashCode.abs() % 900000 + 100000)}'; // Token visual de 6 dígitos
     _sendFrame({
       'action': 'connect_request',
       'from': _localId,
@@ -347,11 +377,7 @@ class LanSocketTransport implements NearbyTransport {
 
   @override
   Future<void> disconnect(String endpointId) async {
-    _sendFrame({
-      'action': 'disconnect',
-      'from': _localId,
-      'to': endpointId,
-    });
+    _sendFrame({'action': 'disconnect', 'from': _localId, 'to': endpointId});
     _clearSecureSession(endpointId);
     _events.add(
       ConnectionChanged(
@@ -365,9 +391,7 @@ class LanSocketTransport implements NearbyTransport {
   Future<void> sendMessage(ChatMessage message) async {
     final session = await _sessionFor(message.endpointId);
     if (!session.isReady) {
-      throw const NearbySetupException(
-        'El canal cifrado aún no está listo.',
-      );
+      throw const NearbySetupException('El canal cifrado aún no está listo.');
     }
     final encrypted = await session.encrypt(message.toPayload());
     _sendFrame({
@@ -386,9 +410,7 @@ class LanSocketTransport implements NearbyTransport {
   }) async {
     final session = await _sessionFor(endpointId);
     if (!session.isReady) {
-      throw const NearbySetupException(
-        'El canal cifrado aún no está listo.',
-      );
+      throw const NearbySetupException('El canal cifrado aún no está listo.');
     }
     final edit = ChatMessageEdit(
       id: 'edit-${DateTime.now().microsecondsSinceEpoch}',
@@ -462,10 +484,10 @@ class LanSocketTransport implements NearbyTransport {
   }
 
   void _sendFrame(Map<String, dynamic> data) {
-    if (_socket == null) return;
-    try {
-      _socket!.write('${jsonEncode(data)}\n');
-    } catch (_) {}
+    if (_socket == null || !_running) {
+      throw const NearbySetupException('La conexión LAN está cerrada.');
+    }
+    _socket!.write('${jsonEncode(data)}\n');
   }
 
   void _emitSecureError(Object error) {

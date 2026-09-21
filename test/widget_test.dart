@@ -11,7 +11,9 @@ void main() {
     tester,
   ) async {
     final transport = FakeNearbyTransport();
-    await tester.pumpWidget(BlueMeshApp(transport: transport));
+    await tester.pumpWidget(
+      BlueMeshApp(transport: transport, enablePlatformServices: false),
+    );
 
     expect(find.text('Mensajes sin Internet'), findsOneWidget);
 
@@ -34,7 +36,9 @@ void main() {
 
   testWidgets('requires verification before opening a chat', (tester) async {
     final transport = FakeNearbyTransport();
-    await tester.pumpWidget(BlueMeshApp(transport: transport));
+    await tester.pumpWidget(
+      BlueMeshApp(transport: transport, enablePlatformServices: false),
+    );
     final enterButton = find.text('Entrar a la red local');
     await tester.ensureVisible(enterButton);
     await tester.tap(enterButton);

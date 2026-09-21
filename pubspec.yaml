@@ -44,6 +44,8 @@ dependencies:
   audioplayers: ^6.8.1
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.4.1
+  crypto: ^3.0.7
+  flutter_local_notifications: ^19.5.0
 
 dev_dependencies:
   flutter_test:
@@ -57,6 +59,16 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/brand/trama.png
+  remove_alpha_ios: true
+  background_color_ios: '#092F38'
+  adaptive_icon_background: '#092F38'
+  adaptive_icon_foreground: assets/brand/trama.png
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

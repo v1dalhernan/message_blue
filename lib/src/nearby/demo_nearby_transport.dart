@@ -164,10 +164,7 @@ class DemoNearbyTransport implements NearbyTransport {
   @override
   Future<void> sendReadReceipt(String endpointId, String messageId) async {
     _events.add(
-      MessageReadReceipt(
-        endpointId: endpointId,
-        messageId: messageId,
-      ),
+      MessageReadReceipt(endpointId: endpointId, messageId: messageId),
     );
   }
 

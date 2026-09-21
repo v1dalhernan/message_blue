@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import '../../models/chat_message.dart';
 
 /// Mensaje en cola del buzón offline (Store-and-Forward / DTN)
@@ -34,6 +35,7 @@ class OfflineMailboxService {
   static final OfflineMailboxService instance = OfflineMailboxService._();
 
   final List<MailboxItem> _queue = [];
+  final _flushing = <String, Future<List<ChatMessage>>>{};
   final StreamController<List<MailboxItem>> _mailboxStreamController =
       StreamController<List<MailboxItem>>.broadcast();
 
@@ -46,6 +48,13 @@ class OfflineMailboxService {
 
   /// Añade un mensaje al buzón offline
   void queueMessage(ChatMessage message, String targetEndpointId) {
+    if (_queue.any(
+      (item) =>
+          item.targetEndpointId == targetEndpointId &&
+          item.message.id == message.id,
+    )) {
+      return;
+    }
     final item = MailboxItem(
       message: message.copyWith(delivery: MessageDelivery.inMailbox),
       targetEndpointId: targetEndpointId,
@@ -57,7 +66,9 @@ class OfflineMailboxService {
 
   /// Obtiene los mensajes pendientes para un dispositivo específico
   List<MailboxItem> getPendingFor(String targetEndpointId) {
-    return _queue.where((item) => item.targetEndpointId == targetEndpointId).toList();
+    return _queue
+        .where((item) => item.targetEndpointId == targetEndpointId)
+        .toList();
   }
 
   /// Elimina del buzón los mensajes ya entregados
@@ -68,6 +79,17 @@ class OfflineMailboxService {
 
   /// Despacha los mensajes pendientes cuando un par se conecta
   Future<List<ChatMessage>> flushPendingForPeer(
+    String targetEndpointId,
+    Future<bool> Function(ChatMessage message) sendCallback,
+  ) => _flushing.putIfAbsent(
+    targetEndpointId,
+    () => _flush(
+      targetEndpointId,
+      sendCallback,
+      ).whenComplete(() { _flushing.remove(targetEndpointId); }),
+  );
+
+  Future<List<ChatMessage>> _flush(
     String targetEndpointId,
     Future<bool> Function(ChatMessage message) sendCallback,
   ) async {
