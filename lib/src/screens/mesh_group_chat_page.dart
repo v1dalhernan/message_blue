@@ -12,6 +12,7 @@ import 'package:record/record.dart';
 import '../chat_controller.dart';
 import '../models/chat_message.dart';
 import 'widgets/chat_visibility.dart';
+import 'widgets/user_avatar_widget.dart';
 
 class MeshGroupChatPage extends StatefulWidget {
   const MeshGroupChatPage({super.key, required this.controller});
@@ -182,27 +183,56 @@ class _MeshGroupChatPageState extends State<MeshGroupChatPage>
 
         return Scaffold(
           appBar: AppBar(
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            titleSpacing: 0,
+            title: Row(
               children: [
-                const Text('Sala Mezclada'),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      hasConnected ? Icons.lock : Icons.lock_open,
-                      size: 12,
-                      color: hasConnected ? Colors.teal : Colors.grey,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      hasConnected
-                          ? '$connectedCount nodo${connectedCount > 1 ? 's' : ''} · Cifrado Malla'
-                          : 'Sin dispositivos conectados',
-                      style: Theme.of(context).textTheme.bodySmall
-                          ?.copyWith(color: hasConnected ? Colors.teal : null),
-                    ),
-                  ],
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.primaryContainer,
+                  child: Icon(
+                    Icons.hub_rounded,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Sala Mezclada',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Row(
+                        children: [
+                          Icon(
+                            hasConnected ? Icons.lock : Icons.lock_open,
+                            size: 12,
+                            color: hasConnected ? Colors.teal : Colors.grey,
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              hasConnected
+                                  ? '$connectedCount nodo${connectedCount > 1 ? 's' : ''} · Cifrado Malla'
+                                  : 'Sin dispositivos conectados',
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: hasConnected ? Colors.teal : null,
+                                    fontWeight: hasConnected
+                                        ? FontWeight.w500
+                                        : null,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -216,6 +246,7 @@ class _MeshGroupChatPageState extends State<MeshGroupChatPage>
             ],
           ),
           body: SafeArea(
+            bottom: false,
             child: Column(
               children: [
                 Expanded(
@@ -273,6 +304,23 @@ class _GroupMessageBubble extends StatelessWidget {
     return colors[hash.abs() % colors.length];
   }
 
+  Widget _buildDeliveryIcon(MessageDelivery delivery, ColorScheme colors) {
+    switch (delivery) {
+      case MessageDelivery.sending:
+        return const Icon(Icons.access_time, size: 13, color: Colors.grey);
+      case MessageDelivery.inMailbox:
+        return const Icon(Icons.schedule_send, size: 13, color: Colors.grey);
+      case MessageDelivery.sent:
+        return const Icon(Icons.done, size: 14, color: Colors.grey);
+      case MessageDelivery.delivered:
+        return const Icon(Icons.done_all, size: 14, color: Colors.grey);
+      case MessageDelivery.read:
+        return const Icon(Icons.done_all, size: 14, color: Color(0xFF53BDEB));
+      case MessageDelivery.failed:
+        return Icon(Icons.error_outline, size: 13, color: colors.error);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -281,13 +329,17 @@ class _GroupMessageBubble extends StatelessWidget {
     final bubbleColor = outgoing
         ? (isDark ? const Color(0xFF005C4B) : const Color(0xFFD9FDD3))
         : (isDark ? const Color(0xFF202C33) : Colors.white);
+    final timeColor = isDark ? Colors.white60 : Colors.black54;
 
     return Align(
       alignment: outgoing ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
         onLongPress: () => _showContextMenu(context),
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 320),
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.sizeOf(context).width * 0.78,
+            minWidth: 84,
+          ),
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
           decoration: BoxDecoration(
@@ -313,11 +365,23 @@ class _GroupMessageBubble extends StatelessWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      message.author,
-                      style: TextStyle(
-                        color: _authorColor(message.author),
-                        fontWeight: FontWeight.w700,
+                    UserAvatarWidget(
+                      avatarBase64: message.authorAvatar,
+                      name: message.author,
+                      radius: 9,
+                      showBadge: false,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        message.author,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _authorColor(message.author),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
                     if (message.hopCount > 0) ...[
@@ -339,34 +403,37 @@ class _GroupMessageBubble extends StatelessWidget {
                     ],
                   ],
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
               ],
               _buildContent(context),
               const SizedBox(height: 4),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _time(message.sentAt),
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
-                  if (message.isEdited) ...[
-                    const SizedBox(width: 4),
+              Align(
+                alignment: Alignment.bottomRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Text(
-                      '(editado)',
-                      style: Theme.of(context).textTheme.labelSmall
-                          ?.copyWith(fontStyle: FontStyle.italic),
+                      _time(message.sentAt),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: timeColor,
+                          ),
                     ),
+                    if (message.isEdited) ...[
+                      const SizedBox(width: 4),
+                      Text(
+                        '(editado)',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              fontStyle: FontStyle.italic,
+                              color: timeColor,
+                            ),
+                      ),
+                    ],
+                    if (outgoing) ...[
+                      const SizedBox(width: 4),
+                      _buildDeliveryIcon(message.delivery, colors),
+                    ],
                   ],
-                  if (outgoing) ...[
-                    const SizedBox(width: 4),
-                    const Icon(
-                      Icons.done_all,
-                      size: 15,
-                      color: Color(0xFF53BDEB),
-                    ),
-                  ],
-                ],
+                ),
               ),
             ],
           ),
@@ -476,6 +543,26 @@ class _GroupImageWidget extends StatelessWidget {
         constraints: const BoxConstraints(maxHeight: 220, maxWidth: 280),
         child: GestureDetector(
           onTap: () {
+            Widget fullImage;
+            if (message.mediaPath != null &&
+                File(message.mediaPath!).existsSync()) {
+              fullImage = Image.file(
+                File(message.mediaPath!),
+                fit: BoxFit.contain,
+              );
+            } else if (message.mediaBase64 != null) {
+              fullImage = Image.memory(
+                base64Decode(message.mediaBase64!),
+                fit: BoxFit.contain,
+              );
+            } else {
+              fullImage = const Icon(
+                Icons.broken_image,
+                size: 64,
+                color: Colors.white54,
+              );
+            }
+
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => Scaffold(
@@ -484,7 +571,12 @@ class _GroupImageWidget extends StatelessWidget {
                     backgroundColor: Colors.black,
                     iconTheme: const IconThemeData(color: Colors.white),
                   ),
-                  body: Center(child: InteractiveViewer(child: imageWidget)),
+                  body: Center(
+                    child: InteractiveViewer(
+                      maxScale: 4.0,
+                      child: fullImage,
+                    ),
+                  ),
                 ),
               ),
             );
@@ -521,7 +613,14 @@ class _GroupAudioWidgetState extends State<_GroupAudioWidget> {
     _duration = Duration(seconds: widget.message.durationSeconds ?? 0);
 
     _subState = _player.onPlayerStateChanged.listen((s) {
-      if (mounted) setState(() => _state = s);
+      if (mounted) {
+        setState(() => _state = s);
+        if (s == PlayerState.completed) {
+          setState(() {
+            _position = Duration.zero;
+          });
+        }
+      }
     });
     _subPos = _player.onPositionChanged.listen((p) {
       if (mounted) setState(() => _position = p);
@@ -589,11 +688,14 @@ class _GroupAudioWidgetState extends State<_GroupAudioWidget> {
           children: [
             SizedBox(
               width: 140,
-              child: LinearProgressIndicator(
-                value: totalSeconds > 0
-                    ? (currentSeconds / totalSeconds).clamp(0.0, 1.0)
-                    : 0.0,
-                backgroundColor: colors.outlineVariant,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: totalSeconds > 0
+                      ? (currentSeconds / totalSeconds).clamp(0.0, 1.0)
+                      : 0.0,
+                  backgroundColor: colors.outlineVariant,
+                ),
               ),
             ),
             const SizedBox(height: 4),
@@ -736,122 +838,163 @@ class _GroupComposerState extends State<_GroupComposer> {
           ),
         ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (widget.editingMessage != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: colors.primaryContainer.withAlpha(120),
-              child: Row(
-                children: [
-                  const Icon(Icons.edit, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Editando mensaje grupal: "${widget.editingMessage!.text}"',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.editingMessage != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                color: colors.primaryContainer.withAlpha(120),
+                child: Row(
+                  children: [
+                    const Icon(Icons.edit, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Editando mensaje grupal: "${widget.editingMessage!.text}"',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    onPressed: widget.onCancelEdit,
-                    tooltip: 'Cancelar edición',
-                  ),
-                ],
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: widget.onCancelEdit,
+                      tooltip: 'Cancelar edición',
+                    ),
+                  ],
+                ),
               ),
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
-            child: _isRecording
-                ? Row(
-                    children: [
-                      IconButton(
-                        tooltip: 'Cancelar grabación',
-                        icon: const Icon(
-                          Icons.delete_outline,
-                          color: Colors.red,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
+              child: _isRecording
+                  ? Row(
+                      children: [
+                        IconButton(
+                          tooltip: 'Cancelar grabación',
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.red,
+                          ),
+                          onPressed: _cancelRecording,
                         ),
-                        onPressed: _cancelRecording,
-                      ),
-                      const SizedBox(width: 8),
-                      const Icon(
-                        Icons.fiber_manual_record,
-                        color: Colors.red,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Grabando: ${_recordSeconds}s',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.red,
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton.filled(
-                        tooltip: 'Enviar nota de voz grupal',
-                        icon: const Icon(Icons.send),
-                        onPressed: _stopAndSendRecording,
-                      ),
-                    ],
-                  )
-                : Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      IconButton(
-                        tooltip: 'Adjuntar imagen',
-                        icon: const Icon(Icons.photo_camera_outlined),
-                        onPressed: widget.enabled ? widget.onPickImage : null,
-                      ),
-                      IconButton(
-                        tooltip: 'Grabar nota de voz',
-                        icon: const Icon(Icons.mic_none_outlined),
-                        onPressed: widget.enabled ? _startRecording : null,
-                      ),
-                      Expanded(
-                        child: TextField(
-                          controller: widget.controller,
-                          enabled: widget.enabled,
-                          minLines: 1,
-                          maxLines: 4,
-                          maxLength: 1000,
-                          textCapitalization: TextCapitalization.sentences,
-                          decoration: InputDecoration(
-                            hintText: widget.enabled
-                                ? (widget.editingMessage != null
-                                      ? 'Edita tu mensaje grupal...'
-                                      : 'Mensaje para todos en la malla...')
-                                : 'Conecta al menos un dispositivo',
-                            counterText: '',
-                            contentPadding: const EdgeInsets.symmetric(
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
                               horizontal: 14,
-                              vertical: 10,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withAlpha(25),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Colors.red.withAlpha(80),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.fiber_manual_record,
+                                  color: Colors.red,
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Grabando nota de voz: ${_recordSeconds}s',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.red,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          onSubmitted: widget.enabled
-                              ? (_) => widget.onSend()
-                              : null,
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      IconButton.filled(
-                        tooltip: widget.editingMessage != null
-                            ? 'Guardar'
-                            : 'Enviar a la malla',
-                        onPressed: widget.enabled ? widget.onSend : null,
-                        icon: Icon(
-                          widget.editingMessage != null
-                              ? Icons.check
-                              : Icons.send,
+                        const SizedBox(width: 8),
+                        IconButton.filled(
+                          tooltip: 'Enviar nota de voz grupal',
+                          icon: const Icon(Icons.send),
+                          onPressed: _stopAndSendRecording,
                         ),
-                      ),
-                    ],
-                  ),
-          ),
-        ],
+                      ],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        IconButton(
+                          tooltip: 'Adjuntar imagen',
+                          icon: const Icon(Icons.photo_camera_outlined),
+                          onPressed: widget.enabled ? widget.onPickImage : null,
+                        ),
+                        IconButton(
+                          tooltip: 'Grabar nota de voz',
+                          icon: const Icon(Icons.mic_none_outlined),
+                          onPressed: widget.enabled ? _startRecording : null,
+                        ),
+                        Expanded(
+                          child: TextField(
+                            controller: widget.controller,
+                            enabled: widget.enabled,
+                            minLines: 1,
+                            maxLines: 4,
+                            maxLength: 1000,
+                            textCapitalization: TextCapitalization.sentences,
+                            decoration: InputDecoration(
+                              hintText: widget.enabled
+                                  ? (widget.editingMessage != null
+                                        ? 'Edita tu mensaje grupal...'
+                                        : 'Mensaje para todos en la malla...')
+                                  : 'Conecta al menos un dispositivo',
+                              counterText: '',
+                              filled: true,
+                              fillColor:
+                                  colors.surfaceContainerHighest.withAlpha(120),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                                borderSide: BorderSide.none,
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                                borderSide: BorderSide.none,
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                                borderSide: BorderSide(
+                                  color: colors.primary.withAlpha(120),
+                                  width: 1,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 10,
+                              ),
+                            ),
+                            onSubmitted: widget.enabled
+                                ? (_) => widget.onSend()
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        IconButton.filled(
+                          tooltip: widget.editingMessage != null
+                              ? 'Guardar'
+                              : 'Enviar a la malla',
+                          onPressed: widget.enabled ? widget.onSend : null,
+                          icon: Icon(
+                            widget.editingMessage != null
+                                ? Icons.check
+                                : Icons.send,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -862,22 +1005,39 @@ class _EmptyGroupConversation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    final colors = Theme.of(context).colorScheme;
+    return Center(
       child: Padding(
-        padding: EdgeInsets.all(32),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.hub_outlined, size: 44),
-            SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: colors.primaryContainer.withAlpha(80),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.hub_rounded,
+                size: 48,
+                color: colors.primary,
+              ),
+            ),
+            const SizedBox(height: 16),
             Text(
               'Sala Mezclada (Malla Local)',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
-            SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
               'Cualquier mensaje, foto o nota de voz enviada aquí se transmitirá a todos los dispositivos cercanos conectados.',
               textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
             ),
           ],
         ),

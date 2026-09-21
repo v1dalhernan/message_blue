@@ -12,6 +12,7 @@ import 'package:record/record.dart';
 import '../chat_controller.dart';
 import '../models/chat_message.dart';
 import 'widgets/chat_visibility.dart';
+import 'widgets/user_avatar_widget.dart';
 
 class PeerChatPage extends StatefulWidget {
   const PeerChatPage({
@@ -182,7 +183,7 @@ class _PeerChatPageState extends State<PeerChatPage>
             titleSpacing: 0,
             title: Row(
               children: [
-                _PeerAvatar(
+                UserAvatarWidget(
                   avatarBase64:
                       peer?.avatarBase64 ??
                       widget.controller.userProfileService.getPeerAvatar(
@@ -190,6 +191,7 @@ class _PeerChatPageState extends State<PeerChatPage>
                       ),
                   name: peer?.name ?? 'Dispositivo',
                   radius: 18,
+                  showBadge: false,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -229,7 +231,6 @@ class _PeerChatPageState extends State<PeerChatPage>
                         ],
                       ),
                       Row(
-                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
                             isConnected ? Icons.lock : Icons.cloud_off,
@@ -239,19 +240,23 @@ class _PeerChatPageState extends State<PeerChatPage>
                                 : Colors.amber.shade800,
                           ),
                           const SizedBox(width: 4),
-                          Text(
-                            isConnected
-                                ? 'Cifrado E2E · AES-256-GCM'
-                                : 'Fuera de línea · Buzón activo',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: isConnected
-                                      ? Colors.teal
-                                      : Colors.amber.shade800,
-                                  fontWeight: isConnected
-                                      ? FontWeight.w500
-                                      : FontWeight.w600,
-                                ),
+                          Flexible(
+                            child: Text(
+                              isConnected
+                                  ? 'Cifrado E2E · AES-256-GCM'
+                                  : 'Fuera de línea · Buzón activo',
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: isConnected
+                                        ? Colors.teal
+                                        : Colors.amber.shade800,
+                                    fontWeight: isConnected
+                                        ? FontWeight.w500
+                                        : FontWeight.w600,
+                                  ),
+                            ),
                           ),
                         ],
                       ),
@@ -262,6 +267,7 @@ class _PeerChatPageState extends State<PeerChatPage>
             ),
           ),
           body: SafeArea(
+            bottom: false,
             child: Column(
               children: [
                 Container(
@@ -274,21 +280,36 @@ class _PeerChatPageState extends State<PeerChatPage>
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFF9E6),
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFF2A2718)
+                        : const Color(0xFFFFF9E6),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFFFEBAA)),
+                    border: Border.all(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? const Color(0xFF4A4020)
+                          : const Color(0xFFFFEBAA),
+                    ),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.lock, size: 14, color: Color(0xFF856404)),
-                      SizedBox(width: 8),
+                      Icon(
+                        Icons.lock,
+                        size: 14,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xFFFFD566)
+                            : const Color(0xFF856404),
+                      ),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Los mensajes en este chat están protegidos con cifrado de extremo a extremo (AES-256-GCM). Nadie fuera de este chat puede leerlos.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 11,
-                            color: Color(0xFF856404),
+                            color:
+                                Theme.of(context).brightness == Brightness.dark
+                                    ? const Color(0xFFFFD566)
+                                    : const Color(0xFF856404),
                             height: 1.25,
                           ),
                         ),
@@ -353,7 +374,10 @@ class _MessageBubble extends StatelessWidget {
       child: GestureDetector(
         onLongPress: () => _showContextMenu(context),
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 320),
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.sizeOf(context).width * 0.78,
+            minWidth: 84,
+          ),
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
           decoration: BoxDecoration(
@@ -375,74 +399,52 @@ class _MessageBubble extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (!outgoing)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 3),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (message.authorAvatar != null) ...[
-                        _PeerAvatar(
-                          avatarBase64: message.authorAvatar,
-                          name: message.author,
-                          radius: 8,
-                        ),
-                        const SizedBox(width: 5),
-                      ],
+              _buildContent(context, isDark),
+              const SizedBox(height: 2),
+              Align(
+                alignment: Alignment.bottomRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _time(message.sentAt),
+                      style: TextStyle(fontSize: 11, color: timeColor),
+                    ),
+                    if (message.isEdited) ...[
+                      const SizedBox(width: 4),
                       Text(
-                        message.author,
-                        style: const TextStyle(
-                          color: Color(0xFF075E54),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12.5,
+                        '(editado)',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontStyle: FontStyle.italic,
+                          color: timeColor,
                         ),
                       ),
                     ],
-                  ),
-                ),
-              _buildContent(context),
-              const SizedBox(height: 4),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _time(message.sentAt),
-                    style: TextStyle(fontSize: 11, color: timeColor),
-                  ),
-                  if (message.isEdited) ...[
-                    const SizedBox(width: 4),
-                    Text(
-                      '(editado)',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontStyle: FontStyle.italic,
-                        color: timeColor,
+                    if (outgoing) ...[
+                      const SizedBox(width: 4),
+                      Icon(
+                        switch (message.delivery) {
+                          MessageDelivery.sending => Icons.access_time,
+                          MessageDelivery.inMailbox => Icons.schedule_send,
+                          MessageDelivery.sent => Icons.done,
+                          MessageDelivery.delivered => Icons.done_all,
+                          MessageDelivery.read => Icons.done_all,
+                          MessageDelivery.failed => Icons.error_outline,
+                        },
+                        size: 15,
+                        color: switch (message.delivery) {
+                          MessageDelivery.read => const Color(0xFF53BDEB),
+                          MessageDelivery.delivered => timeColor,
+                          MessageDelivery.sent => timeColor,
+                          MessageDelivery.inMailbox => const Color(0xFFFFA000),
+                          MessageDelivery.failed => Colors.red,
+                          _ => timeColor,
+                        },
                       ),
-                    ),
+                    ],
                   ],
-                  if (outgoing) ...[
-                    const SizedBox(width: 4),
-                    Icon(
-                      switch (message.delivery) {
-                        MessageDelivery.sending => Icons.access_time,
-                        MessageDelivery.inMailbox => Icons.schedule_send,
-                        MessageDelivery.sent => Icons.done,
-                        MessageDelivery.delivered => Icons.done_all,
-                        MessageDelivery.read => Icons.done_all,
-                        MessageDelivery.failed => Icons.error_outline,
-                      },
-                      size: 15,
-                      color: switch (message.delivery) {
-                        MessageDelivery.read => const Color(0xFF53BDEB),
-                        MessageDelivery.delivered => timeColor,
-                        MessageDelivery.sent => timeColor,
-                        MessageDelivery.inMailbox => const Color(0xFFFFA000),
-                        MessageDelivery.failed => Colors.red,
-                        _ => timeColor,
-                      },
-                    ),
-                  ],
-                ],
+                ),
               ),
             ],
           ),
@@ -451,7 +453,8 @@ class _MessageBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildContent(BuildContext context) {
+  Widget _buildContent(BuildContext context, bool isDark) {
+    final textColor = isDark ? Colors.white : Colors.black87;
     switch (message.type) {
       case ChatMessageType.image:
         return Column(
@@ -460,7 +463,10 @@ class _MessageBubble extends StatelessWidget {
             _ImageBubble(message: message),
             if (message.text.isNotEmpty) ...[
               const SizedBox(height: 6),
-              Text(message.text),
+              Text(
+                message.text,
+                style: TextStyle(fontSize: 15, color: textColor, height: 1.25),
+              ),
             ],
           ],
         );
@@ -470,7 +476,10 @@ class _MessageBubble extends StatelessWidget {
           outgoing: message.direction == MessageDirection.outgoing,
         );
       case ChatMessageType.text:
-        return Text(message.text);
+        return Text(
+          message.text,
+          style: TextStyle(fontSize: 15.5, color: textColor, height: 1.25),
+        );
     }
   }
 
@@ -529,23 +538,24 @@ class _ImageBubble extends StatelessWidget {
 
   final ChatMessage message;
 
-  @override
-  Widget build(BuildContext context) {
-    Widget imageWidget;
+  Widget _buildImage({required BoxFit fit}) {
     if (message.mediaPath != null && File(message.mediaPath!).existsSync()) {
-      imageWidget = Image.file(File(message.mediaPath!), fit: BoxFit.cover);
+      return Image.file(File(message.mediaPath!), fit: fit);
     } else if (message.mediaBase64 != null) {
-      imageWidget = Image.memory(
+      return Image.memory(
         base64Decode(message.mediaBase64!),
-        fit: BoxFit.cover,
+        fit: fit,
       );
     } else {
-      imageWidget = const Padding(
+      return const Padding(
         padding: EdgeInsets.all(16),
         child: Icon(Icons.broken_image, size: 48),
       );
     }
+  }
 
+  @override
+  Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: ConstrainedBox(
@@ -560,12 +570,16 @@ class _ImageBubble extends StatelessWidget {
                     backgroundColor: Colors.black,
                     iconTheme: const IconThemeData(color: Colors.white),
                   ),
-                  body: Center(child: InteractiveViewer(child: imageWidget)),
+                  body: Center(
+                    child: InteractiveViewer(
+                      child: _buildImage(fit: BoxFit.contain),
+                    ),
+                  ),
                 ),
               ),
             );
           },
-          child: imageWidget,
+          child: _buildImage(fit: BoxFit.cover),
         ),
       ),
     );
@@ -597,7 +611,14 @@ class _AudioBubbleState extends State<_AudioBubble> {
     _duration = Duration(seconds: widget.message.durationSeconds ?? 0);
 
     _subState = _player.onPlayerStateChanged.listen((s) {
-      if (mounted) setState(() => _state = s);
+      if (mounted) {
+        setState(() {
+          _state = s;
+          if (s == PlayerState.completed) {
+            _position = Duration.zero;
+          }
+        });
+      }
     });
     _subPos = _player.onPositionChanged.listen((p) {
       if (mounted) setState(() => _position = p);
@@ -620,6 +641,9 @@ class _AudioBubbleState extends State<_AudioBubble> {
     if (_state == PlayerState.playing) {
       await _player.pause();
     } else {
+      if (_position >= _duration && _duration > Duration.zero) {
+        await _player.seek(Duration.zero);
+      }
       if (widget.message.mediaPath != null &&
           File(widget.message.mediaPath!).existsSync()) {
         await _player.play(DeviceFileSource(widget.message.mediaPath!));
@@ -663,11 +687,16 @@ class _AudioBubbleState extends State<_AudioBubble> {
           children: [
             SizedBox(
               width: 140,
-              child: LinearProgressIndicator(
-                value: totalSeconds > 0
-                    ? (currentSeconds / totalSeconds).clamp(0.0, 1.0)
-                    : 0.0,
-                backgroundColor: colors.outlineVariant,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: totalSeconds > 0
+                      ? (currentSeconds / totalSeconds).clamp(0.0, 1.0)
+                      : 0.0,
+                  minHeight: 5,
+                  backgroundColor: colors.outlineVariant.withAlpha(80),
+                  color: widget.outgoing ? colors.primary : colors.secondary,
+                ),
               ),
             ),
             const SizedBox(height: 4),
@@ -818,126 +847,167 @@ class _ComposerState extends State<_Composer> {
           ),
         ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (widget.editingMessage != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: colors.primaryContainer.withAlpha(120),
-              child: Row(
-                children: [
-                  const Icon(Icons.edit, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Editando mensaje: "${widget.editingMessage!.text}"',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.editingMessage != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                color: colors.primaryContainer.withAlpha(120),
+                child: Row(
+                  children: [
+                    const Icon(Icons.edit, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Editando mensaje: "${widget.editingMessage!.text}"',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    onPressed: widget.onCancelEdit,
-                    tooltip: 'Cancelar edición',
-                  ),
-                ],
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: widget.onCancelEdit,
+                      tooltip: 'Cancelar edición',
+                    ),
+                  ],
+                ),
               ),
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
-            child: _isRecording
-                ? Row(
-                    children: [
-                      IconButton(
-                        tooltip: 'Cancelar grabación',
-                        icon: const Icon(
-                          Icons.delete_outline,
-                          color: Colors.red,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
+              child: _isRecording
+                  ? Row(
+                      children: [
+                        IconButton(
+                          tooltip: 'Cancelar grabación',
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.red,
+                          ),
+                          onPressed: _cancelRecording,
                         ),
-                        onPressed: _cancelRecording,
-                      ),
-                      const SizedBox(width: 8),
-                      const Icon(
-                        Icons.fiber_manual_record,
-                        color: Colors.red,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Grabando: ${_recordSeconds}s',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.red,
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton.filled(
-                        tooltip: 'Enviar nota de voz',
-                        icon: const Icon(Icons.send),
-                        onPressed: _stopAndSendRecording,
-                      ),
-                    ],
-                  )
-                : Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      IconButton(
-                        tooltip: 'Adjuntar imagen',
-                        icon: const Icon(Icons.photo_camera_outlined),
-                        onPressed: (widget.enabled && widget.isConnected)
-                            ? widget.onPickImage
-                            : null,
-                      ),
-                      IconButton(
-                        tooltip: 'Grabar nota de voz',
-                        icon: const Icon(Icons.mic_none_outlined),
-                        onPressed: (widget.enabled && widget.isConnected)
-                            ? _startRecording
-                            : null,
-                      ),
-                      Expanded(
-                        child: TextField(
-                          controller: widget.controller,
-                          enabled: widget.enabled,
-                          minLines: 1,
-                          maxLines: 4,
-                          maxLength: 1000,
-                          textCapitalization: TextCapitalization.sentences,
-                          decoration: InputDecoration(
-                            hintText: widget.editingMessage != null
-                                ? 'Edita tu mensaje...'
-                                : (widget.isConnected
-                                      ? 'Escribe un mensaje...'
-                                      : 'Escribe un mensaje (buzón offline)...'),
-                            counterText: '',
-                            contentPadding: const EdgeInsets.symmetric(
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
                               horizontal: 14,
-                              vertical: 10,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withAlpha(25),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Colors.red.withAlpha(80),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.fiber_manual_record,
+                                  color: Colors.red,
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Grabando nota de voz: ${_recordSeconds}s',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.red,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          onSubmitted: widget.enabled
-                              ? (_) => widget.onSend()
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton.filled(
+                          tooltip: 'Enviar nota de voz',
+                          icon: const Icon(Icons.send),
+                          onPressed: _stopAndSendRecording,
+                        ),
+                      ],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        IconButton(
+                          tooltip: 'Adjuntar imagen',
+                          icon: const Icon(Icons.photo_camera_outlined),
+                          onPressed: (widget.enabled && widget.isConnected)
+                              ? widget.onPickImage
                               : null,
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      IconButton.filled(
-                        tooltip: widget.editingMessage != null
-                            ? 'Guardar'
-                            : 'Enviar',
-                        onPressed: widget.enabled ? widget.onSend : null,
-                        icon: Icon(
-                          widget.editingMessage != null
-                              ? Icons.check
-                              : Icons.send,
+                        IconButton(
+                          tooltip: 'Grabar nota de voz',
+                          icon: const Icon(Icons.mic_none_outlined),
+                          onPressed: (widget.enabled && widget.isConnected)
+                              ? _startRecording
+                              : null,
                         ),
-                      ),
-                    ],
-                  ),
-          ),
-        ],
+                        Expanded(
+                          child: TextField(
+                            controller: widget.controller,
+                            enabled: widget.enabled,
+                            minLines: 1,
+                            maxLines: 4,
+                            maxLength: 1000,
+                            textCapitalization: TextCapitalization.sentences,
+                            decoration: InputDecoration(
+                              hintText: widget.editingMessage != null
+                                  ? 'Edita tu mensaje...'
+                                  : (widget.isConnected
+                                        ? 'Escribe un mensaje...'
+                                        : 'Escribe un mensaje (buzón offline)...'),
+                              counterText: '',
+                              filled: true,
+                              fillColor:
+                                  colors.surfaceContainerHighest.withAlpha(120),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                                borderSide: BorderSide.none,
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                                borderSide: BorderSide.none,
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                                borderSide: BorderSide(
+                                  color: colors.primary.withAlpha(120),
+                                  width: 1,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 10,
+                              ),
+                            ),
+                            onSubmitted: widget.enabled
+                                ? (_) => widget.onSend()
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        IconButton.filled(
+                          tooltip: widget.editingMessage != null
+                              ? 'Guardar'
+                              : 'Enviar',
+                          onPressed: widget.enabled ? widget.onSend : null,
+                          icon: Icon(
+                            widget.editingMessage != null
+                                ? Icons.check
+                                : Icons.send,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -948,59 +1018,41 @@ class _EmptyConversation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    final colors = Theme.of(context).colorScheme;
+    return Center(
       child: Padding(
-        padding: EdgeInsets.all(32),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.chat_bubble_outline, size: 44),
-            SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: colors.primaryContainer.withAlpha(80),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.chat_bubble_outline_rounded,
+                size: 48,
+                color: colors.primary,
+              ),
+            ),
+            const SizedBox(height: 16),
             Text(
-              'La conexión está lista. Envía texto, fotos o notas de voz sin Internet.',
+              'La conexión está lista',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Envía texto, fotos o notas de voz sin Internet de forma segura.',
               textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PeerAvatar extends StatelessWidget {
-  const _PeerAvatar({this.avatarBase64, required this.name, this.radius = 18});
-
-  final String? avatarBase64;
-  final String name;
-  final double radius;
-
-  @override
-  Widget build(BuildContext context) {
-    if (avatarBase64 != null && avatarBase64!.startsWith('preset:')) {
-      final emoji = avatarBase64!.replaceFirst('preset:', '');
-      return CircleAvatar(
-        radius: radius,
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-        child: Text(emoji, style: TextStyle(fontSize: radius * 1.1)),
-      );
-    } else if (avatarBase64 != null && avatarBase64!.isNotEmpty) {
-      try {
-        final bytes = base64Decode(avatarBase64!);
-        return CircleAvatar(
-          radius: radius,
-          backgroundImage: MemoryImage(bytes),
-        );
-      } catch (_) {}
-    }
-    return CircleAvatar(
-      radius: radius,
-      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-      child: Text(
-        name.isNotEmpty ? name[0].toUpperCase() : '?',
-        style: TextStyle(
-          fontSize: radius * 0.9,
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).colorScheme.onPrimaryContainer,
         ),
       ),
     );

@@ -71,65 +71,72 @@ class _TotpPinWidgetState extends State<TotpPinWidget> {
     final timerColor = isUrgent ? colors.error : colors.primary;
 
     if (widget.compact) {
-      return Row(
-        children: [
-          Icon(Icons.shield_outlined, size: 20, color: colors.primary),
-          const SizedBox(width: 8),
-          const Text(
-            'PIN: ',
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-          ),
-          SelectableText(
-            formattedPin,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 2,
-              color: colors.primary,
+      return InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: _copyPin,
+        child: Row(
+          children: [
+            Icon(Icons.shield_outlined, size: 18, color: colors.primary),
+            const SizedBox(width: 6),
+            const Text(
+              'PIN: ',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
             ),
-          ),
-          const Spacer(),
-          // Contador circular animado
-          Tooltip(
-            message:
-                'Código dinámico tipo 2FA. Cambia automáticamente en ${_remainingSeconds}s.',
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    value: _progress,
-                    strokeWidth: 2.5,
-                    backgroundColor: colors.outlineVariant.withAlpha(80),
-                    color: timerColor,
-                  ),
+            Flexible(
+              child: Text(
+                formattedPin,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.5,
+                  color: colors.primary,
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  '${_remainingSeconds}s',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: timerColor,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 28,
-                    minHeight: 28,
-                  ),
-                  icon: const Icon(Icons.copy, size: 15),
-                  tooltip: 'Copiar PIN',
-                  onPressed: _copyPin,
-                ),
-              ],
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            // Contador circular animado
+            Tooltip(
+              message:
+                  'Código dinámico tipo 2FA. Cambia automáticamente en ${_remainingSeconds}s.',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      value: _progress,
+                      strokeWidth: 2.2,
+                      backgroundColor: colors.outlineVariant.withAlpha(80),
+                      color: timerColor,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '${_remainingSeconds}s',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: timerColor,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 26,
+                      minHeight: 26,
+                    ),
+                    icon: const Icon(Icons.copy, size: 14),
+                    tooltip: 'Copiar PIN',
+                    onPressed: _copyPin,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       );
     }
 
@@ -170,22 +177,25 @@ class _TotpPinWidgetState extends State<TotpPinWidget> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                SelectableText(
-                  formattedPin,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 3,
+                Flexible(
+                  child: Text(
+                    formattedPin,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 2.5,
+                    ),
                   ),
                 ),
                 Row(
                   children: [
                     SizedBox(
-                      width: 22,
-                      height: 22,
+                      width: 20,
+                      height: 20,
                       child: CircularProgressIndicator(
                         value: _progress,
-                        strokeWidth: 3,
+                        strokeWidth: 2.5,
                         backgroundColor: colors.outlineVariant.withAlpha(80),
                         color: timerColor,
                       ),

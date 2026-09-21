@@ -16,6 +16,7 @@ import '../nearby/nearby_transport.dart';
 import 'mesh_group_chat_page.dart';
 import 'peer_chat_page.dart';
 import 'widgets/totp_pin_widget.dart';
+import 'widgets/user_avatar_widget.dart';
 
 const bool kEnterpriseMode = bool.fromEnvironment(
   'ENTERPRISE',
@@ -154,7 +155,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 IconButton(
                   tooltip: 'Mi Perfil',
                   onPressed: () => _showProfileSheet(context, _controller),
-                  icon: const Icon(Icons.account_circle_outlined),
+                  icon: UserAvatarWidget(
+                    avatarBase64: _controller.localAvatar,
+                    name: _controller.displayName,
+                    radius: 14,
+                    showBadge: false,
+                  ),
                 ),
                 if (!kEnterpriseMode)
                   IconButton(
@@ -199,18 +205,20 @@ class _WelcomeBody extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Container(
-                  width: 68,
-                  height: 68,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: colors.primaryContainer,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.forum_outlined,
-                    size: 34,
-                    color: colors.onPrimaryContainer,
+                Center(
+                  child: Container(
+                    width: 68,
+                    height: 68,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: colors.primaryContainer,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.forum_outlined,
+                      size: 34,
+                      color: colors.onPrimaryContainer,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -495,93 +503,153 @@ class _PeerCard extends StatelessWidget {
 
     return Card(
       color: colors.surface,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                UserAvatarWidget(
-                  avatarBase64:
-                      peer.avatarBase64 ??
-                      controller.userProfileService.getPeerAvatar(peer.id),
-                  name: peer.name,
-                  radius: 22,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              peer.name,
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.w700),
-                              overflow: TextOverflow.ellipsis,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: peer.isConnected
+            ? () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => PeerChatPage(
+                      controller: controller,
+                      endpointId: peer.id,
+                    ),
+                  ),
+                );
+              }
+            : null,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  UserAvatarWidget(
+                    avatarBase64:
+                        peer.avatarBase64 ??
+                        controller.userProfileService.getPeerAvatar(peer.id),
+                    name: peer.name,
+                    radius: 22,
+                    showBadge: false,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                peer.name,
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                          if (peer.uniqueId != null) ...[
+                            if (peer.uniqueId != null) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: colors.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  peer.uniqueId!,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            if (unreadCount > 0) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF25D366),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '$unreadCount',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: switch (peer.status) {
+                                  PeerConnectionStatus.connected =>
+                                    Colors.teal,
+                                  PeerConnectionStatus.awaitingApproval ||
+                                  PeerConnectionStatus.securing ||
+                                  PeerConnectionStatus.connecting =>
+                                    Colors.amber.shade700,
+                                  _ => Colors.grey.shade400,
+                                },
+                              ),
+                            ),
                             const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 5,
-                                vertical: 1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: colors.surfaceContainerHighest,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
+                            Flexible(
                               child: Text(
-                                peer.uniqueId!,
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
+                                _statusLabel(peer.status),
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: peer.isConnected
+                                      ? Colors.teal
+                                      : colors.onSurfaceVariant,
+                                  fontWeight: peer.isConnected
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
                                 ),
                               ),
                             ),
                           ],
-                          if (unreadCount > 0) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF25D366),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                '$unreadCount',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (peer.status == PeerConnectionStatus.discovered ||
+                      peer.status == PeerConnectionStatus.disconnected ||
+                      peer.status == PeerConnectionStatus.failed ||
+                      peer.status == PeerConnectionStatus.rejected)
+                    FilledButton.tonal(
+                      onPressed: () =>
+                          _showPinConnectionDialog(context, controller, peer),
+                      child: const Text('Conectar'),
+                    )
+                  else if (peer.status == PeerConnectionStatus.connecting ||
+                      peer.status == PeerConnectionStatus.securing)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2.2),
                       ),
-                      Text(_statusLabel(peer.status)),
-                    ],
-                  ),
-                ),
-                if (peer.status == PeerConnectionStatus.discovered ||
-                    peer.status == PeerConnectionStatus.disconnected ||
-                    peer.status == PeerConnectionStatus.failed ||
-                    peer.status == PeerConnectionStatus.rejected)
-                  FilledButton.tonal(
-                    onPressed: () =>
-                        _showPinConnectionDialog(context, controller, peer),
-                    child: const Text('Conectar'),
-                  ),
-              ],
-            ),
+                    ),
+                ],
+              ),
             if (peer.isSpoofed) ...[
               const SizedBox(height: 10),
               Container(
@@ -730,7 +798,7 @@ class _PeerCard extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ));
   }
 
   String _statusLabel(PeerConnectionStatus status) {
@@ -758,7 +826,7 @@ class _PeerCard extends StatelessWidget {
           children: [
             Icon(Icons.qr_code_scanner),
             SizedBox(width: 8),
-            Text('Escanear QR de enlace'),
+            Flexible(child: Text('Escanear QR de enlace')),
           ],
         ),
         content: SizedBox(
@@ -909,8 +977,16 @@ class _ErrorCard extends StatelessWidget {
         children: [
           Icon(Icons.error_outline, color: colors.onErrorContainer),
           const SizedBox(width: 10),
-          Expanded(child: Text(message)),
-          IconButton(onPressed: onClose, icon: const Icon(Icons.close)),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(color: colors.onErrorContainer),
+            ),
+          ),
+          IconButton(
+            onPressed: onClose,
+            icon: Icon(Icons.close, color: colors.onErrorContainer),
+          ),
         ],
       ),
     );
@@ -1001,93 +1077,6 @@ class _MeshGroupCard extends StatelessWidget {
   }
 }
 
-class UserAvatarWidget extends StatelessWidget {
-  const UserAvatarWidget({
-    super.key,
-    this.avatarBase64,
-    required this.name,
-    this.radius = 22,
-    this.onTap,
-  });
-
-  final String? avatarBase64;
-  final String name;
-  final double radius;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget avatarWidget;
-    if (avatarBase64 != null && avatarBase64!.startsWith('preset:')) {
-      final emoji = avatarBase64!.replaceFirst('preset:', '');
-      avatarWidget = CircleAvatar(
-        radius: radius,
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-        child: Text(emoji, style: TextStyle(fontSize: radius * 1.1)),
-      );
-    } else if (avatarBase64 != null && avatarBase64!.isNotEmpty) {
-      try {
-        final bytes = base64Decode(avatarBase64!);
-        avatarWidget = CircleAvatar(
-          radius: radius,
-          backgroundImage: MemoryImage(bytes),
-        );
-      } catch (_) {
-        avatarWidget = CircleAvatar(
-          radius: radius,
-          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          child: Text(
-            name.isNotEmpty ? name[0].toUpperCase() : '?',
-            style: TextStyle(
-              fontSize: radius * 0.9,
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.onPrimaryContainer,
-            ),
-          ),
-        );
-      }
-    } else {
-      avatarWidget = CircleAvatar(
-        radius: radius,
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-        child: Text(
-          name.isNotEmpty ? name[0].toUpperCase() : '?',
-          style: TextStyle(
-            fontSize: radius * 0.9,
-            fontWeight: FontWeight.bold,
-            color: Theme.of(context).colorScheme.onPrimaryContainer,
-          ),
-        ),
-      );
-    }
-
-    if (onTap != null) {
-      return GestureDetector(
-        onTap: onTap,
-        child: Stack(
-          alignment: Alignment.bottomRight,
-          children: [
-            avatarWidget,
-            Container(
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.camera_alt,
-                size: 11,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-    return avatarWidget;
-  }
-}
-
 void _showPinConnectionDialog(
   BuildContext context,
   ChatController controller,
@@ -1104,50 +1093,52 @@ void _showPinConnectionDialog(
           Expanded(child: Text('Conectar con ${peer.name}')),
         ],
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Ingresa el PIN temporal que aparece en la pantalla de ${peer.name}:',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'El código rota cada 30s. Si recién cambió, el código previo aún es válido.',
-            style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Ingresa el PIN temporal que aparece en la pantalla de ${peer.name}:',
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: pinController,
-            keyboardType: TextInputType.number,
-            maxLength: 6,
-            autofocus: true,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 26,
-              letterSpacing: 6,
-              fontWeight: FontWeight.bold,
-            ),
-            decoration: InputDecoration(
-              hintText: '000000',
-              counterText: '',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+            const SizedBox(height: 4),
+            Text(
+              'El código rota cada 30s. Si recién cambió, el código previo aún es válido.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Al escribir el código correcto, la conexión se establecerá y verificará automáticamente.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            const SizedBox(height: 14),
+            TextField(
+              controller: pinController,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              autofocus: true,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 26,
+                letterSpacing: 6,
+                fontWeight: FontWeight.bold,
+              ),
+              decoration: InputDecoration(
+                hintText: '000000',
+                counterText: '',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              'Al escribir el código correcto, la conexión se establecerá y verificará automáticamente.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
@@ -1182,90 +1173,92 @@ void _showAvatarSelectionSheet(
     builder: (ctx) => SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Foto de perfil en Trama',
-              style: Theme.of(context).textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Tu foto se transmitirá de forma liviana a los dispositivos cercanos en la red.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Foto de perfil en Trama',
+                style: Theme.of(context).textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
-            ),
-            const SizedBox(height: 18),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _avatarOptionButton(
-                  context,
-                  icon: Icons.camera_alt_outlined,
-                  label: 'Cámara',
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    final picker = ImagePicker();
-                    final picked = await picker.pickImage(
-                      source: ImageSource.camera,
-                      maxWidth: 256,
-                      maxHeight: 256,
-                      imageQuality: 70,
-                    );
-                    if (picked != null) {
-                      await controller.updateProfileAvatar(File(picked.path));
-                    }
-                  },
+              const SizedBox(height: 6),
+              Text(
+                'Tu foto se transmitirá de forma liviana a los dispositivos cercanos en la red.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
-                _avatarOptionButton(
-                  context,
-                  icon: Icons.photo_library_outlined,
-                  label: 'Galería',
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    final picker = ImagePicker();
-                    final picked = await picker.pickImage(
-                      source: ImageSource.gallery,
-                      maxWidth: 256,
-                      maxHeight: 256,
-                      imageQuality: 70,
-                    );
-                    if (picked != null) {
-                      await controller.updateProfileAvatar(File(picked.path));
-                    }
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 8),
-            Text(
-              'O selecciona un avatar rápido:',
-              style: Theme.of(context).textTheme.bodySmall
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: ['🦊', '🤖', '🚀', '🐱', '⚡', '🛡️'].map((emoji) {
-                return InkWell(
-                  borderRadius: BorderRadius.circular(24),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    controller.setPresetAvatar(emoji);
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Text(emoji, style: const TextStyle(fontSize: 28)),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _avatarOptionButton(
+                    context,
+                    icon: Icons.camera_alt_outlined,
+                    label: 'Cámara',
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final picker = ImagePicker();
+                      final picked = await picker.pickImage(
+                        source: ImageSource.camera,
+                        maxWidth: 256,
+                        maxHeight: 256,
+                        imageQuality: 70,
+                      );
+                      if (picked != null) {
+                        await controller.updateProfileAvatar(File(picked.path));
+                      }
+                    },
                   ),
-                );
-              }).toList(),
-            ),
-          ],
+                  _avatarOptionButton(
+                    context,
+                    icon: Icons.photo_library_outlined,
+                    label: 'Galería',
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final picker = ImagePicker();
+                      final picked = await picker.pickImage(
+                        source: ImageSource.gallery,
+                        maxWidth: 256,
+                        maxHeight: 256,
+                        imageQuality: 70,
+                      );
+                      if (picked != null) {
+                        await controller.updateProfileAvatar(File(picked.path));
+                      }
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              Text(
+                'O selecciona un avatar rápido:',
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: ['🦊', '🤖', '🚀', '🐱', '⚡', '🛡️'].map((emoji) {
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(24),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      controller.setPresetAvatar(emoji);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text(emoji, style: const TextStyle(fontSize: 28)),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
         ),
       ),
     ),
@@ -1338,32 +1331,13 @@ void _showProfileSheet(BuildContext context, ChatController controller) {
                   ),
                   const SizedBox(height: 16),
                   Center(
-                    child: Stack(
-                      alignment: Alignment.bottomRight,
-                      children: [
-                        UserAvatarWidget(
-                          avatarBase64: controller.localAvatar,
-                          name: controller.displayName,
-                          radius: 46,
-                          onTap: () {
-                            _showAvatarSelectionSheet(context, controller);
-                          },
-                        ),
-                        GestureDetector(
-                          onTap: () {
-                            _showAvatarSelectionSheet(context, controller);
-                          },
-                          child: CircleAvatar(
-                            radius: 16,
-                            backgroundColor: colors.primary,
-                            child: const Icon(
-                              Icons.camera_alt,
-                              size: 16,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
+                    child: UserAvatarWidget(
+                      avatarBase64: controller.localAvatar,
+                      name: controller.displayName,
+                      radius: 46,
+                      onTap: () {
+                        _showAvatarSelectionSheet(context, controller);
+                      },
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -1371,6 +1345,7 @@ void _showProfileSheet(BuildContext context, ChatController controller) {
                     elevation: 0,
                     color: colors.surfaceContainerLow,
                     child: ListTile(
+                      onTap: () => _showEditNameDialog(context, controller),
                       leading: const Icon(Icons.person_outline),
                       title: const Text(
                         'Nombre',
@@ -1396,6 +1371,7 @@ void _showProfileSheet(BuildContext context, ChatController controller) {
                     elevation: 0,
                     color: colors.surfaceContainerLow,
                     child: ListTile(
+                      onTap: () => _showEditStatusDialog(context, controller),
                       leading: const Icon(Icons.info_outline),
                       title: const Text(
                         'Info. actual',
@@ -1463,13 +1439,15 @@ void _showEditNameDialog(BuildContext context, ChatController controller) {
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('Editar nombre'),
-      content: TextField(
-        controller: nameCtrl,
-        maxLength: 24,
-        autofocus: true,
-        decoration: const InputDecoration(
-          labelText: 'Tu nombre en Trama',
-          counterText: '',
+      content: SingleChildScrollView(
+        child: TextField(
+          controller: nameCtrl,
+          maxLength: 24,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Tu nombre en Trama',
+            counterText: '',
+          ),
         ),
       ),
       actions: [
@@ -1506,35 +1484,37 @@ void _showEditStatusDialog(BuildContext context, ChatController controller) {
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('Editar info'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: statusCtrl,
-            maxLength: 60,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'Estado o bio'),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Sugerencias:',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: suggestions.map((s) {
-              return ActionChip(
-                label: Text(s, style: const TextStyle(fontSize: 12)),
-                onPressed: () {
-                  statusCtrl.text = s;
-                },
-              );
-            }).toList(),
-          ),
-        ],
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: statusCtrl,
+              maxLength: 60,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Estado o bio'),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Sugerencias:',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: suggestions.map((s) {
+                return ActionChip(
+                  label: Text(s, style: const TextStyle(fontSize: 12)),
+                  onPressed: () {
+                    statusCtrl.text = s;
+                  },
+                );
+              }).toList(),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(

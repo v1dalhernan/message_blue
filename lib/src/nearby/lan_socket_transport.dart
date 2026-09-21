@@ -230,23 +230,6 @@ class LanSocketTransport implements NearbyTransport {
               outcome: ConnectionOutcome.disconnected,
             ),
           );
-
-        case 'peer_updated':
-          final from = msg['endpointId'] as String;
-          final name = msg['name'] as String?;
-          final avatar = msg['avatar'] as String?;
-          final uniqueId = msg['uniqueId'] as String?;
-          if (name != null) {
-            _peerNames[from] = name;
-          }
-          _events.add(
-            PeerUpdated(
-              endpointId: from,
-              name: name,
-              avatar: avatar,
-              uniqueId: uniqueId,
-            ),
-          );
       }
     } catch (e) {
       _events.add(NearbyFailure('Error procesando mensaje: $e'));

@@ -435,8 +435,8 @@ class NearbyConnectionsTransport implements NearbyTransport {
   Future<void> sendProfileUpdate({String? name, String? avatar}) async {
     final payload = jsonEncode({
       'type': 'profile_update',
-      if (name != null) 'name': name,
-      if (avatar != null) 'avatar': avatar,
+      'name': ?name,
+      'avatar': ?avatar,
     });
     final payloadBytes = utf8.encode(payload);
     for (final endpointId in _secureEndpoints) {

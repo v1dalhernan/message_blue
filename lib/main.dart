@@ -48,6 +48,22 @@ class BlueMeshApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: seedColor,
+          brightness: Brightness.dark,
+        ),
+        scaffoldBackgroundColor: const Color(0xFF111B21),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF111B21),
+          surfaceTintColor: Colors.transparent,
+        ),
+        cardTheme: const CardThemeData(elevation: 0, margin: EdgeInsets.zero),
+        inputDecorationTheme: const InputDecorationTheme(
+          border: OutlineInputBorder(),
+        ),
+        useMaterial3: true,
+      ),
       home: HomePage(
         transport: transport ?? _defaultTransport(),
         enablePlatformServices: enablePlatformServices,

@@ -10,12 +10,14 @@ class UserAvatarWidget extends StatelessWidget {
     required this.name,
     this.radius = 22,
     this.onTap,
+    this.showBadge = true,
   });
 
   final String? avatarBase64;
   final String name;
   final double radius;
   final VoidCallback? onTap;
+  final bool showBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -42,24 +44,33 @@ class UserAvatarWidget extends StatelessWidget {
     }
 
     if (onTap != null) {
+      final badgeIconSize = (radius * 0.35).clamp(11.0, 22.0);
+      final badgePadding = (radius * 0.08).clamp(3.0, 6.0);
+      final borderWidth = (radius * 0.05).clamp(1.5, 3.0);
+
       return GestureDetector(
         onTap: onTap,
         child: Stack(
           alignment: Alignment.bottomRight,
           children: [
             avatarWidget,
-            Container(
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                shape: BoxShape.circle,
+            if (showBadge)
+              Container(
+                padding: EdgeInsets.all(badgePadding),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.surface,
+                    width: borderWidth,
+                  ),
+                ),
+                child: Icon(
+                  Icons.camera_alt,
+                  size: badgeIconSize,
+                  color: Colors.white,
+                ),
               ),
-              child: const Icon(
-                Icons.camera_alt,
-                size: 11,
-                color: Colors.white,
-              ),
-            ),
           ],
         ),
       );
@@ -68,11 +79,12 @@ class UserAvatarWidget extends StatelessWidget {
   }
 
   Widget _fallbackAvatar(BuildContext context) {
+    final trimmed = name.trim();
     return CircleAvatar(
       radius: radius,
       backgroundColor: Theme.of(context).colorScheme.primaryContainer,
       child: Text(
-        name.isNotEmpty ? name[0].toUpperCase() : '?',
+        trimmed.isNotEmpty ? trimmed[0].toUpperCase() : '?',
         style: TextStyle(
           fontSize: radius * 0.9,
           fontWeight: FontWeight.bold,
