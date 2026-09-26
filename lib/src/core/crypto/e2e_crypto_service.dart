@@ -121,7 +121,7 @@ class E2eCryptoService {
     return null;
   }
 
-  /// Generates a random 256-bit symmetric key for a WhatsApp-style Group Chat
+  /// Generates a random 256-bit symmetric key for a group chat
   static String generateRandomGroupSecretKey() {
     final random = Random.secure();
     final bytes = List<int>.generate(32, (_) => random.nextInt(256));

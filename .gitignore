@@ -32,7 +32,6 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
-/graphify-out/
 
 # Symbolication related
 app.*.symbols
@@ -52,3 +51,7 @@ app.*.map.json
 /android/key.properties
 *.jks
 *.keystore
+
+# Local tooling and personal notes (never committed)
+.codex/
+graphify-out/
