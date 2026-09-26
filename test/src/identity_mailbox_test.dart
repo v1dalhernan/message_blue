@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:message_blue/src/core/identity/user_identity_service.dart';
-import 'package:message_blue/src/core/iot/iot_device_node.dart';
 import 'package:message_blue/src/core/profile/user_profile_service.dart';
 import 'package:message_blue/src/core/storage/offline_mailbox_service.dart';
 import 'package:message_blue/src/models/chat_message.dart';
@@ -117,30 +116,6 @@ void main() {
       expect(dispatched.length, 1);
       expect(sentList, contains('msg-1'));
       expect(OfflineMailboxService.instance.pendingCount, 0);
-    });
-  });
-
-  group('IoT Telemetry', () {
-    test('serializes and deserializes IoT telemetry packets', () {
-      final packet = IotTelemetryPacket(
-        nodeId: 'iot_temp_sensor_01',
-        nodeName: 'Sensor Termómetro #1',
-        type: IotNodeType.sensor,
-        metricName: 'Temperatura',
-        metricValue: 23.5,
-        unit: '°C',
-        batteryPercent: 88,
-        timestamp: DateTime.fromMillisecondsSinceEpoch(1700000000000),
-      );
-
-      final jsonMap = packet.toJson();
-      expect(jsonMap['nodeId'], 'iot_temp_sensor_01');
-      expect(jsonMap['type'], 'sensor');
-
-      final reconstructed = IotTelemetryPacket.fromJson(jsonMap);
-      expect(reconstructed.nodeId, packet.nodeId);
-      expect(reconstructed.metricValue, 23.5);
-      expect(reconstructed.unit, '°C');
     });
   });
 }

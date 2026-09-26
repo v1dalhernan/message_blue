@@ -17,7 +17,7 @@
   <a href="LICENSE"><img alt="Licencia MIT" src="https://img.shields.io/badge/licencia-MIT-blue"></a>
 </p>
 
-> **English summary.** Trama is an offline, peer-to-peer messenger built with Flutter. Phones discover each other over Google Nearby Connections (Bluetooth / BLE / Wi-Fi Direct), verify each link with a short code, and form a multi-hop mesh: a private chat from A to C can travel through B without B being able to read it (X25519 + HKDF + AES-256-GCM envelopes). It supports text, photos and voice notes, message edits, read receipts, store-and-forward delivery, local history and system notifications. 27 automated tests cover routing, encryption, deduplication, verification and reconnection.
+> **English summary.** Trama is an offline, peer-to-peer messenger built with Flutter. Phones discover each other over Google Nearby Connections (Bluetooth / BLE / Wi-Fi Direct), verify each link with a short code, and form a multi-hop mesh: a private chat from A to C can travel through B without B being able to read it (X25519 + HKDF + AES-256-GCM envelopes). It supports text, photos and voice notes, message edits, read receipts, store-and-forward delivery, local history and system notifications. 26 automated tests cover routing, encryption, deduplication, verification and reconnection.
 
 ## Capturas
 
@@ -57,7 +57,7 @@ flowchart LR
 
 Todos los transportes implementan la misma interfaz `NearbyTransport`, lo que permite probar la lógica de malla con enlaces simulados y cambiar la radio real por TCP o por una demo sin tocar la interfaz.
 
-La entrada es `lib/main.dart`, que usa `lib/src/screens/`, `lib/src/chat_controller.dart` y `lib/src/nearby/mesh_transport.dart`. Bajo `lib/src/presentation/`, `domain/` y `data/` existe una arquitectura alternativa experimental que no está conectada al punto de entrada.
+La entrada es `lib/main.dart`, que usa `lib/src/screens/`, `lib/src/chat_controller.dart` y `lib/src/nearby/mesh_transport.dart`.
 
 ### Stack
 
@@ -97,7 +97,7 @@ flutter analyze
 flutter test
 ```
 
-27 pruebas automatizadas, ejecutadas en cada push por [GitHub Actions](.github/workflows/ci.yml). Incluyen una topología A-B-C sin enlace A-C, recepción cifrada, rechazo de texto cifrado manipulado, PIN incorrecto, verificación bilateral, multimedia, ediciones, lectura, reconexión, deduplicación, visibilidad de notificaciones, fragmentación y restauración local.
+26 pruebas automatizadas, ejecutadas en cada push por [GitHub Actions](.github/workflows/ci.yml). Incluyen una topología A-B-C sin enlace A-C, recepción cifrada, rechazo de texto cifrado manipulado, PIN incorrecto, verificación bilateral, multimedia, ediciones, lectura, reconexión, deduplicación, visibilidad de notificaciones, fragmentación y restauración local.
 
 ## Límites conocidos
 
