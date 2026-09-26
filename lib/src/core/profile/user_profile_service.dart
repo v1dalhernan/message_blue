@@ -7,7 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../identity/user_identity_service.dart';
 
-/// Servicio de Perfil de Usuario y Fotos de Perfil (Avatares) estilo WhatsApp.
+/// Servicio de Perfil de Usuario y Fotos de Perfil (avatares).
 class UserProfileService {
   UserProfileService._();
   static final UserProfileService instance = UserProfileService._();

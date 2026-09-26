@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 /// Widget unificado para mostrar avatares de perfil (fotos o emojis predefinidos)
-/// con diseño consistente estilo WhatsApp en toda la aplicación.
+/// con un diseño consistente en toda la aplicación.
 class UserAvatarWidget extends StatelessWidget {
   const UserAvatarWidget({
     super.key,

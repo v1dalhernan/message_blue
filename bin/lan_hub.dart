@@ -11,7 +11,7 @@ import 'dart:io';
 /// 1. Registro con ID único criptográfico, avatar de perfil y PIN personal.
 /// 2. Verificación de código PIN introducido por el solicitante.
 /// 3. Buzón Store-and-Forward para mensajes a dispositivos fuera de línea.
-/// 4. Retransmisión transparente de paquetes E2EE y telemetría IoT.
+/// 4. Retransmisión transparente de paquetes E2EE.
 void main(List<String> args) {
   runZonedGuarded(() async {
     final port = int.tryParse(Platform.environment['PORT'] ?? '') ?? 8765;

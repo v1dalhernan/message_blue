@@ -30,6 +30,6 @@ El servicio Android mejora la continuidad con la app en segundo plano; no promet
 
 La sala pública es visible para sus participantes, incluidos los repetidores. Los chats privados usan cifrado entre destinatarios. Las claves de identidad son persistentes: esta versión no ofrece secreto hacia adelante. La identidad y el historial residen en almacenamiento privado de la app, sin una capa adicional de cifrado del archivo. El PIN de enlace es una verificación de proximidad, no un segundo factor de una cuenta de usuario.
 
-No es todavía un release de tienda: Android mantiene firma de depuración y falta la validación física de tres teléfonos.
+No es todavía un release de tienda: la firma de release es opcional (sin clave configurada se usa la de depuración) y falta la validación física de tres teléfonos.
 
 Referencias: [Nearby y límite de paquetes](https://developers.google.com/nearby/connections/overview), [servicio connectedDevice](https://developer.android.com/develop/background-work/services/fgs/service-types).
