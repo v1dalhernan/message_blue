@@ -116,7 +116,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-El workflow [Release](.github/workflows/release.yml) ejecuta las pruebas, compila ambos APK y los adjunta a una GitHub Release. Si se configuran los secretos `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` y `ANDROID_KEY_PASSWORD`, el APK se firma con esa clave; si no, con la clave de depuración.
+También se puede lanzar desde la pestaña Actions (workflow Release, "Run workflow") indicando la versión; el workflow crea el tag. El workflow [Release](.github/workflows/release.yml) ejecuta las pruebas, compila ambos APK y los adjunta a una GitHub Release. Si se configuran los secretos `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` y `ANDROID_KEY_PASSWORD`, el APK se firma con esa clave; si no, con la clave de depuración.
 
 ## Autor
 
